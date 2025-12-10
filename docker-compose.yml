@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sdr-trades-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./excel_output:/app/excel_output
+    environment:
+      - EXCEL_OUTPUT_DIR=/app/excel_output
+    restart: unless-stopped
+    networks:
+      - sdr-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sdr-trades-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_WS_URL=ws://localhost:8000/ws
+      - VITE_API_URL=http://localhost:8000
+    restart: unless-stopped
+    networks:
+      - sdr-network
+    depends_on:
+      - backend
+
+networks:
+  sdr-network:
+    driver: bridge
+
