@@ -195,13 +195,70 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
   };
 
   // Sort and display trades (most recent first)
+  // Only show one trade per explicit group (grouped_trades), but show all individual trades
   const displayTrades = useMemo(() => {
     const sorted = [...filteredTrades].sort((a, b) => {
       const timeA = new Date(a.execution_timestamp).getTime();
       const timeB = new Date(b.execution_timestamp).getTime();
       return timeB - timeA; // Descending (newest first)
     });
-    return sorted;
+    
+    // Track which trades are already shown as part of a group
+    const shownTradeIds = new Set<string>();
+    const result: Trade[] = [];
+    
+    // First pass: identify all trades that are members of explicit groups (not the group leader)
+    const tradesInGroups = new Set<string>();
+    for (const trade of sorted) {
+      if (trade.grouped_trades && trade.grouped_trades.length > 0) {
+        // This trade is a group leader, mark all its grouped trades as "in a group"
+        trade.grouped_trades.forEach(gt => {
+          if (gt.dissemination_identifier !== trade.dissemination_identifier) {
+            tradesInGroups.add(gt.dissemination_identifier);
+          }
+        });
+      }
+    }
+    
+    // Second pass: process trades
+    for (const trade of sorted) {
+      // Skip if already shown
+      if (shownTradeIds.has(trade.dissemination_identifier)) {
+        continue;
+      }
+      
+      // Skip if this trade is a member of another trade's explicit group
+      if (tradesInGroups.has(trade.dissemination_identifier)) {
+        continue;
+      }
+      
+      // Check if this trade is a group leader (has grouped_trades)
+      const hasGroupedTrades = trade.grouped_trades && trade.grouped_trades.length > 0;
+      
+      // If trade is a group leader, show it and mark all group members as shown
+      if (hasGroupedTrades) {
+        const groupIds = new Set(
+          trade.grouped_trades?.map(gt => gt.dissemination_identifier) || []
+        );
+        groupIds.add(trade.dissemination_identifier);
+        
+        result.push(trade);
+        // Mark all trades in this group as shown
+        groupIds.forEach(id => shownTradeIds.add(id));
+      }
+      // Otherwise, show the trade individually (even if it has a strategy_id)
+      else {
+        result.push(trade);
+        shownTradeIds.add(trade.dissemination_identifier);
+      }
+    }
+    
+    // Re-sort result by timestamp
+    return result.sort((a, b) => {
+      const timeA = new Date(a.execution_timestamp).getTime();
+      const timeB = new Date(b.execution_timestamp).getTime();
+      return timeB - timeA;
+    });
   }, [filteredTrades]);
 
 

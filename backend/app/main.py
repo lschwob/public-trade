@@ -361,8 +361,50 @@ async def update_analytics():
 
 @app.on_event("startup")
 async def startup():
-    """Startup event: initialize poller."""
+    """Startup event: initialize poller and load trades from Excel."""
+    global trade_buffer, seen_trade_ids, package_legs, daily_stats
+    
     logger.info("Starting IRS monitoring application...")
+    
+    # Load trades from Excel file (today's file)
+    logger.info("Loading trades from Excel file...")
+    loaded_trades = excel_writer.load_trades_from_excel()
+    
+    if loaded_trades:
+        # Add loaded trades to buffer
+        trade_buffer.extend(loaded_trades)
+        
+        # Mark all loaded trades as seen (to avoid duplicates)
+        for trade in loaded_trades:
+            seen_trade_ids.add(trade.dissemination_identifier)
+            
+            # Track package legs
+            if trade.package_indicator and trade.package_transaction_price:
+                package_key = trade.package_transaction_price
+                if package_key not in package_legs:
+                    package_legs[package_key] = []
+                package_legs[package_key].append(trade)
+            
+            # Update daily stats
+            daily_stats["total_trades"] += 1
+            if trade.notional_eur:
+                daily_stats["total_notional_eur"] += trade.notional_eur
+                daily_stats["largest_trade_eur"] = max(
+                    daily_stats["largest_trade_eur"],
+                    trade.notional_eur
+                )
+                
+                # Update underlying volumes
+                underlying = trade.unique_product_identifier_underlier_name or "Unknown"
+                daily_stats["underlying_volumes"][underlying] = \
+                    daily_stats["underlying_volumes"].get(underlying, 0.0) + trade.notional_eur
+            
+            # Update trades per hour
+            hour_key = trade.execution_timestamp.strftime("%Y-%m-%d %H:00")
+            daily_stats["trades_per_hour"][hour_key] = \
+                daily_stats["trades_per_hour"].get(hour_key, 0) + 1
+        
+        logger.info(f"Loaded {len(loaded_trades)} trades from Excel into buffer")
     
     # Set alert callback
     alert_engine.set_callback(handle_alert)

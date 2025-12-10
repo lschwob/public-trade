@@ -103,7 +103,7 @@ class ExcelWriter:
             "ID", "Timestamp", "Action", "Underlying", "Notional Leg1", "Notional Leg2",
             "Currency Leg1", "Currency Leg2", "Fixed Rate Leg1", "Fixed Rate Leg2",
             "Spread Leg2", "Rate %", "Maturity", "Tenor", "Platform", "Strategy ID",
-            "Package", "Notional EUR"
+            "Package", "Notional EUR", "Is Forward", "Effective Date"
         ]
         
         for col, header in enumerate(headers, 1):
@@ -181,6 +181,37 @@ class ExcelWriter:
     
     def _write_trade(self, trade: Trade):
         """Write a trade to the Trades sheet."""
+        # Check if trade already exists (by ID)
+        for row in range(2, self.trades_sheet.max_row + 1):
+            if self.trades_sheet.cell(row=row, column=1).value == trade.dissemination_identifier:
+                # Update existing row
+                self.trades_sheet.cell(row=row, column=2, value=trade.execution_timestamp.strftime("%Y-%m-%d %H:%M:%S"))
+                self.trades_sheet.cell(row=row, column=3, value=trade.action_type)
+                self.trades_sheet.cell(row=row, column=4, value=trade.unique_product_identifier_underlier_name or "")
+                self.trades_sheet.cell(row=row, column=5, value=trade.notional_amount_leg1)
+                self.trades_sheet.cell(row=row, column=6, value=trade.notional_amount_leg2)
+                self.trades_sheet.cell(row=row, column=7, value=trade.notional_currency_leg1)
+                self.trades_sheet.cell(row=row, column=8, value=trade.notional_currency_leg2)
+                self.trades_sheet.cell(row=row, column=9, value=trade.fixed_rate_leg1)
+                self.trades_sheet.cell(row=row, column=10, value=trade.fixed_rate_leg2)
+                self.trades_sheet.cell(row=row, column=11, value=trade.spread_leg2)
+                rate_display = ""
+                if trade.fixed_rate_leg1:
+                    rate_display = f"{trade.fixed_rate_leg1 * 100:.4f}%"
+                elif trade.spread_leg2 is not None:
+                    rate_display = f"Spread: {trade.spread_leg2}"
+                self.trades_sheet.cell(row=row, column=12, value=rate_display)
+                self.trades_sheet.cell(row=row, column=13, value=trade.expiration_date or "")
+                self.trades_sheet.cell(row=row, column=14, value=trade.tenor or "")
+                self.trades_sheet.cell(row=row, column=15, value=trade.platform_identifier or "")
+                self.trades_sheet.cell(row=row, column=16, value=trade.strategy_id or "")
+                self.trades_sheet.cell(row=row, column=17, value="Yes" if trade.package_indicator else "No")
+                self.trades_sheet.cell(row=row, column=18, value=trade.notional_eur or 0)
+                self.trades_sheet.cell(row=row, column=19, value="Yes" if trade.is_forward else "No")
+                self.trades_sheet.cell(row=row, column=20, value=trade.effective_date or "")
+                return
+        
+        # Add new trade
         row = self.trades_sheet.max_row + 1
         
         # Calculate rate display
@@ -207,7 +238,9 @@ class ExcelWriter:
         self.trades_sheet.cell(row=row, column=15, value=trade.platform_identifier or "")
         self.trades_sheet.cell(row=row, column=16, value=trade.strategy_id or "")
         self.trades_sheet.cell(row=row, column=17, value="Yes" if trade.package_indicator else "No")
-        self.trades_sheet.cell(row=row, column=18, value=trade.notional_eur or "")
+        self.trades_sheet.cell(row=row, column=18, value=trade.notional_eur or 0)
+        self.trades_sheet.cell(row=row, column=19, value="Yes" if trade.is_forward else "No")
+        self.trades_sheet.cell(row=row, column=20, value=trade.effective_date or "")
     
     def _write_strategy(self, strategy: Strategy):
         """Write or update a strategy in the Strategies sheet."""
@@ -329,4 +362,65 @@ class ExcelWriter:
                 self.analytics_sheet.cell(row=row, column=1, value=f"Currency {currency_data['currency']}")
                 self.analytics_sheet.cell(row=row, column=2, value=f"Notional: {currency_data['notional']}, Count: {currency_data['count']}")
                 row += 1
+    
+    def load_trades_from_excel(self) -> List[Trade]:
+        """Load all trades from today's Excel file."""
+        trades = []
+        try:
+            self._ensure_file_exists()
+            if not self.trades_sheet or self.trades_sheet.max_row < 2:
+                logger.info("No trades found in Excel file")
+                return trades
+            
+            # Read all rows (skip header row 1)
+            for row in range(2, self.trades_sheet.max_row + 1):
+                try:
+                    trade_id = self.trades_sheet.cell(row=row, column=1).value
+                    if not trade_id:
+                        continue
+                    
+                    timestamp_str = self.trades_sheet.cell(row=row, column=2).value
+                    if isinstance(timestamp_str, str):
+                        timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+                    else:
+                        timestamp = timestamp_str if isinstance(timestamp_str, datetime) else datetime.utcnow()
+                    
+                    # Reconstruct trade from Excel row
+                    trade = Trade(
+                        dissemination_identifier=str(trade_id),
+                        action_type=self.trades_sheet.cell(row=row, column=3).value or "NEWT",
+                        event_type="TRADE",
+                        event_timestamp=timestamp,
+                        execution_timestamp=timestamp,
+                        effective_date=self.trades_sheet.cell(row=row, column=20).value if self.trades_sheet.max_column >= 20 else None,
+                        expiration_date=self.trades_sheet.cell(row=row, column=13).value or None,
+                        notional_amount_leg1=float(self.trades_sheet.cell(row=row, column=5).value or 0),
+                        notional_amount_leg2=float(self.trades_sheet.cell(row=row, column=6).value or 0),
+                        notional_currency_leg1=self.trades_sheet.cell(row=row, column=7).value or "",
+                        notional_currency_leg2=self.trades_sheet.cell(row=row, column=8).value or "",
+                        fixed_rate_leg1=self.trades_sheet.cell(row=row, column=9).value,
+                        fixed_rate_leg2=self.trades_sheet.cell(row=row, column=10).value,
+                        spread_leg1=None,
+                        spread_leg2=self.trades_sheet.cell(row=row, column=11).value,
+                        unique_product_identifier="",
+                        unique_product_identifier_underlier_name=self.trades_sheet.cell(row=row, column=4).value or None,
+                        platform_identifier=self.trades_sheet.cell(row=row, column=15).value or None,
+                        package_indicator=self.trades_sheet.cell(row=row, column=17).value == "Yes" if self.trades_sheet.cell(row=row, column=17).value else False,
+                        package_transaction_price=None,  # Not stored in Excel currently
+                        strategy_id=self.trades_sheet.cell(row=row, column=16).value or None,
+                        notional_eur=float(self.trades_sheet.cell(row=row, column=18).value or 0),
+                        tenor=self.trades_sheet.cell(row=row, column=14).value or None,
+                        is_forward=self.trades_sheet.cell(row=row, column=19).value == "Yes" if self.trades_sheet.max_column >= 19 and self.trades_sheet.cell(row=row, column=19).value else False,
+                        effective_date_dt=None
+                    )
+                    trades.append(trade)
+                except Exception as e:
+                    logger.warning(f"Error loading trade from row {row}: {e}")
+                    continue
+            
+            logger.info(f"Loaded {len(trades)} trades from Excel file")
+        except Exception as e:
+            logger.error(f"Error loading trades from Excel: {e}", exc_info=True)
+        
+        return trades
 

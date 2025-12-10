@@ -13,14 +13,14 @@ logger = logging.getLogger(__name__)
 
 
 def parse_notional(notional_str) -> float:
-    """Parse notional string like '300,000,000' to float."""
+    """Parse notional string like '300,000,000' or '650,000,000+' to float."""
     if not notional_str:
         return 0.0
     # Handle string or number
     if isinstance(notional_str, (int, float)):
         return float(notional_str)
-    # Remove commas and whitespace
-    cleaned = str(notional_str).strip().replace(",", "").replace(" ", "")
+    # Remove commas, whitespace, and trailing + sign
+    cleaned = str(notional_str).strip().replace(",", "").replace(" ", "").rstrip("+")
     if not cleaned or cleaned == "":
         return 0.0
     try:
