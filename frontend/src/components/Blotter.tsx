@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Trade } from '../types/trade';
+import { Trade, Strategy } from '../types/trade';
 import TradeRow from './TradeRow';
 import ColumnSelector from './ColumnSelector';
 
 interface BlotterProps {
   trades: Trade[];
+  strategies?: Strategy[];
 }
 
 export interface ColumnConfig {
@@ -17,12 +18,12 @@ export interface ColumnConfig {
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'time', label: 'Time', visible: true, width: 110 },
   { id: 'action', label: 'Action', visible: true, width: 90 },
-  { id: 'underlying', label: 'Underlying', visible: true, width: 250 },
+  { id: 'underlying', label: 'Underlying', visible: true, width: 200 },
   { id: 'notional', label: 'Notional', visible: true, width: 140 },
   { id: 'tenor', label: 'Tenor', visible: true, width: 80 },
   { id: 'rate', label: 'Rate', visible: true, width: 120 },
-  { id: 'package', label: 'Package', visible: true, width: 130 },
-  { id: 'strategy', label: 'Strategy', visible: true, width: 180 },
+  { id: 'package', label: 'Package', visible: true, width: 100 },
+  { id: 'strategy', label: 'Strategy', visible: true, width: 220 },
   { id: 'platform', label: 'Platform', visible: true, width: 110 },
   { id: 'eur', label: 'EUR', visible: true, width: 120 },
   { id: 'id', label: 'ID', visible: false, width: 250 },
@@ -30,8 +31,18 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'maturity', label: 'Maturity', visible: false, width: 130 },
 ];
 
-export default function Blotter({ trades }: BlotterProps) {
+export default function Blotter({ trades, strategies = [] }: BlotterProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [tenorPairFilter, setTenorPairFilter] = useState<string>('all');
+  
+  // Additional filters
+  const [actionFilter, setActionFilter] = useState<string>('all');
+  const [tenorFilter, setTenorFilter] = useState<string>('all');
+  const [forwardSpotFilter, setForwardSpotFilter] = useState<string>('all'); // all, forward, spot
+  const [strategyTypeFilter, setStrategyTypeFilter] = useState<string>('all'); // all, outright, spread, butterfly, curve
+  const [platformFilter, setPlatformFilter] = useState<string>('all');
+  const [showFilters, setShowFilters] = useState(false);
+  
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
   const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set());
   const [columns, setColumns] = useState<ColumnConfig[]>(() => {
@@ -46,17 +57,110 @@ export default function Blotter({ trades }: BlotterProps) {
     localStorage.setItem('blotter-columns', JSON.stringify(columns));
   }, [columns]);
 
+  // Helper function to sort tenors
+  const sortTenors = (tenors: string[]): string[] => {
+    const tenorOrder = ["3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"];
+    return tenors.sort((a, b) => {
+      const indexA = tenorOrder.indexOf(a);
+      const indexB = tenorOrder.indexOf(b);
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    });
+  };
+
+  // Get unique values for filters
+  const uniqueActions = useMemo(() => 
+    Array.from(new Set(trades.map(t => t.action_type).filter(Boolean))).sort(),
+    [trades]
+  );
+
+  const uniqueTenors = useMemo(() => {
+    const tenors = Array.from(new Set(trades.map(t => t.tenor).filter((t): t is string => Boolean(t))));
+    return sortTenors(tenors);
+  }, [trades]);
+
+  const uniquePlatforms = useMemo(() => 
+    Array.from(new Set(trades.map(t => t.platform_identifier).filter(Boolean))).sort(),
+    [trades]
+  );
+
+  // Get unique tenor pairs from strategies
+  const uniqueTenorPairs = useMemo(() => {
+    const pairs = Array.from(
+      new Set(strategies.map(s => s.tenor_pair).filter(Boolean))
+    ).sort();
+    return pairs;
+  }, [strategies]);
+
   // Filter trades
   const filteredTrades = useMemo(() => {
-    if (!searchTerm) return trades;
+    let filtered = trades;
     
-    const term = searchTerm.toLowerCase();
-    return trades.filter(trade => 
-      trade.unique_product_identifier_underlier_name?.toLowerCase().includes(term) ||
-      trade.strategy_id?.toLowerCase().includes(term) ||
-      trade.dissemination_identifier.toLowerCase().includes(term)
-    );
-  }, [trades, searchTerm]);
+    // Search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(trade => 
+        trade.unique_product_identifier_underlier_name?.toLowerCase().includes(term) ||
+        trade.strategy_id?.toLowerCase().includes(term) ||
+        trade.dissemination_identifier.toLowerCase().includes(term)
+      );
+    }
+    
+    // Action filter
+    if (actionFilter !== 'all') {
+      filtered = filtered.filter(t => t.action_type === actionFilter);
+    }
+    
+    // Tenor filter
+    if (tenorFilter !== 'all') {
+      filtered = filtered.filter(t => t.tenor === tenorFilter);
+    }
+    
+    // Forward/Spot filter
+    if (forwardSpotFilter === 'forward') {
+      filtered = filtered.filter(t => t.is_forward);
+    } else if (forwardSpotFilter === 'spot') {
+      filtered = filtered.filter(t => !t.is_forward);
+    }
+    
+    // Strategy Type filter
+    if (strategyTypeFilter !== 'all') {
+      if (strategyTypeFilter === 'outright') {
+        // Outright: no package, no strategy (directional trades)
+        filtered = filtered.filter(t => !t.package_indicator && !t.strategy_id);
+      } else if (strategyTypeFilter === 'multiline_compression') {
+        // Multiline Compression: package but no strategy detected
+        filtered = filtered.filter(t => t.package_indicator && !t.strategy_id);
+      } else {
+        // Other strategy types: spread, butterfly, curve
+        filtered = filtered.filter(t => {
+          if (!t.strategy_id) return false;
+          const strategy = strategies.find(s => s.strategy_id === t.strategy_id);
+          if (!strategy) return false;
+          const baseType = strategy.strategy_type.split(' ').pop()?.toLowerCase();
+          return baseType === strategyTypeFilter;
+        });
+      }
+    }
+    
+    // Platform filter
+    if (platformFilter !== 'all') {
+      filtered = filtered.filter(t => t.platform_identifier === platformFilter);
+    }
+    
+    // Tenor Pair filter (existing)
+    if (tenorPairFilter !== 'all') {
+      filtered = filtered.filter(trade => {
+        if (!trade.strategy_id) return false;
+        const strategy = strategies.find(s => s.strategy_id === trade.strategy_id);
+        return strategy?.tenor_pair === tenorPairFilter;
+      });
+    }
+    
+    return filtered;
+  }, [trades, searchTerm, actionFilter, tenorFilter, forwardSpotFilter, 
+      strategyTypeFilter, platformFilter, tenorPairFilter, strategies]);
 
   // Calculate visible columns
   const visibleColumns = useMemo(() => {
@@ -105,7 +209,7 @@ export default function Blotter({ trades }: BlotterProps) {
     <div className="flex flex-col h-full bg-white">
       {/* Toolbar */}
       <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-4 mb-2">
           <div className="flex-1">
             <input
               type="text"
@@ -116,12 +220,98 @@ export default function Blotter({ trades }: BlotterProps) {
             />
           </div>
           <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700"
+          >
+            {showFilters ? '▲' : '▼'} Filters
+          </button>
+          <button
             onClick={() => setShowColumnSelector(!showColumnSelector)}
             className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700"
           >
             ⚙️ Columns
           </button>
         </div>
+        
+        {/* Expandable Filters */}
+        {showFilters && (
+          <div className="grid grid-cols-6 gap-3 pt-3 border-t border-gray-300">
+            {/* Action Filter */}
+            <select
+              value={actionFilter}
+              onChange={(e) => setActionFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              <option value="all">All Actions</option>
+              {uniqueActions.map(action => (
+                <option key={action} value={action}>{action}</option>
+              ))}
+            </select>
+            
+            {/* Tenor Filter */}
+            <select
+              value={tenorFilter}
+              onChange={(e) => setTenorFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              <option value="all">All Tenors</option>
+              {uniqueTenors.map(tenor => (
+                <option key={tenor} value={tenor}>{tenor}</option>
+              ))}
+            </select>
+            
+            {/* Forward/Spot Filter */}
+            <select
+              value={forwardSpotFilter}
+              onChange={(e) => setForwardSpotFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              <option value="all">All Trades</option>
+              <option value="spot">Spot</option>
+              <option value="forward">Forward</option>
+            </select>
+            
+            {/* Strategy Type Filter */}
+            <select
+              value={strategyTypeFilter}
+              onChange={(e) => setStrategyTypeFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              <option value="all">All Strategies</option>
+              <option value="outright">Outright</option>
+              <option value="multiline_compression">Multiline Compression</option>
+              <option value="spread">Spread</option>
+              <option value="butterfly">Butterfly</option>
+              <option value="curve">Curve</option>
+            </select>
+            
+            {/* Platform Filter */}
+            <select
+              value={platformFilter}
+              onChange={(e) => setPlatformFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              <option value="all">All Platforms</option>
+              {uniquePlatforms.map(platform => (
+                <option key={platform} value={platform}>{platform}</option>
+              ))}
+            </select>
+            
+            {/* Tenor Pair Filter (existing) */}
+            {uniqueTenorPairs.length > 0 && (
+              <select
+                value={tenorPairFilter}
+                onChange={(e) => setTenorPairFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+              >
+                <option value="all">All Tenor Pairs</option>
+                {uniqueTenorPairs.map(pair => (
+                  <option key={pair} value={pair}>{pair}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
         
         {/* Column Selector */}
         {showColumnSelector && (
@@ -141,25 +331,25 @@ export default function Blotter({ trades }: BlotterProps) {
           <div className="bg-white">
             {/* Table Header */}
             <div className="sticky top-0 z-10 bg-gradient-to-r from-gray-100 to-gray-50 border-b-2 border-gray-300 shadow-sm">
-              <table className="w-full border-collapse" style={{ tableLayout: 'fixed', width: '100%' }}>
-                <colgroup>
+            <table className="w-full border-collapse" style={{ tableLayout: 'fixed', width: '100%' }}>
+              <colgroup>
+                {visibleColumns.map(col => (
+                  <col key={col.id} style={{ width: `${col.width}px`, minWidth: `${col.width}px`, maxWidth: `${col.width}px` }} />
+                ))}
+              </colgroup>
+              <thead>
+                <tr>
                   {visibleColumns.map(col => (
-                    <col key={col.id} style={{ width: `${col.width}px` }} />
+                    <th
+                      key={col.id}
+                      className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide border-r border-gray-300 bg-gray-100 overflow-hidden"
+                      style={{ width: `${col.width}px`, maxWidth: `${col.width}px` }}
+                    >
+                      <div className="truncate">{col.label}</div>
+                    </th>
                   ))}
-                </colgroup>
-                <thead>
-                  <tr>
-                    {visibleColumns.map(col => (
-                      <th
-                        key={col.id}
-                        className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide border-r border-gray-300 bg-gray-100"
-                        style={{ width: `${col.width}px` }}
-                      >
-                        {col.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
+                </tr>
+              </thead>
               </table>
             </div>
 
@@ -185,6 +375,7 @@ export default function Blotter({ trades }: BlotterProps) {
                       hasLegs={hasLegs}
                       onToggleExpand={() => toggleExpand(trade.dissemination_identifier)}
                       visibleColumns={visibleColumns}
+                      strategies={strategies}
                     />
                   );
                 })}

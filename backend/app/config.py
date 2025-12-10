@@ -16,9 +16,9 @@ DTCC_HEADERS = {
 
 # Alert thresholds in EUR
 ALERT_THRESHOLDS_EUR = {
-    "critical": 1_000_000_000,  # 1B EUR
-    "high": 500_000_000,         # 500M EUR
-    "medium": 100_000_000        # 100M EUR
+    "critical": 2_000_000_000,  # 2B EUR (au lieu de 1B)
+    "high": 1_000_000_000,       # 1B EUR (au lieu de 500M)
+    "medium": 500_000_000        # 500M EUR (au lieu de 100M)
 }
 
 # Strategy detection

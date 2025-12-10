@@ -382,9 +382,30 @@ class AnalyticsEngine:
             "custom": custom_count
         }
         
+        # NEW: Tenor pair statistics
+        tenor_pair_stats = defaultdict(lambda: {"count": 0, "total_notional": 0.0})
+        for strategy in strategies:
+            if strategy.tenor_pair:
+                tenor_pair_stats[strategy.tenor_pair]["count"] += 1
+                tenor_pair_stats[strategy.tenor_pair]["total_notional"] += strategy.total_notional_eur
+        
+        # Format for output
+        tenor_pair_distribution = [
+            {
+                "tenor_pair": pair,
+                "count": stats["count"],
+                "total_notional": stats["total_notional"],
+                "avg_notional": stats["total_notional"] / stats["count"] if stats["count"] > 0 else 0
+            }
+            for pair, stats in tenor_pair_stats.items()
+        ]
+        # Sort by count descending
+        tenor_pair_distribution.sort(key=lambda x: x["count"], reverse=True)
+        
         return {
             "strategy_avg_notional": strategy_avg_notional,
             "strategy_tenor_preference": strategy_tenor_preference,
-            "package_vs_custom": package_vs_custom
+            "package_vs_custom": package_vs_custom,
+            "tenor_pair_distribution": tenor_pair_distribution
         }
 

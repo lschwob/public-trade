@@ -4,6 +4,7 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from dateutil import parser
 import httpx
 from app.config import DTCC_API_URL, DTCC_HEADERS, POLL_INTERVAL
 from app.models import Trade
@@ -86,6 +87,26 @@ def calculate_tenor(effective_date: Optional[str], expiration_date: Optional[str
 def normalize_trade(raw_trade: Dict[str, Any]) -> Optional[Trade]:
     """Normalize raw trade data from DTCC API to Trade model."""
     try:
+        # Detect forward trades
+        effective_date_str = raw_trade.get("effectiveDate")
+        effective_date_dt = None
+        is_forward = False
+        
+        if effective_date_str:
+            try:
+                effective_date_dt = parser.isoparse(effective_date_str)
+                # If effective date is more than 2 business days in the future, it's a forward
+                now = datetime.utcnow()
+                # Remove timezone for comparison
+                if effective_date_dt.tzinfo:
+                    effective_date_dt_naive = effective_date_dt.replace(tzinfo=None)
+                else:
+                    effective_date_dt_naive = effective_date_dt
+                days_diff = (effective_date_dt_naive - now).days
+                is_forward = days_diff > 2
+            except Exception as e:
+                logger.warning(f"Error parsing effectiveDate: {e}")
+        
         return Trade(
             dissemination_identifier=raw_trade.get("disseminationIdentifier", ""),
             original_dissemination_identifier=raw_trade.get("originalDisseminationIdentifier"),
@@ -93,7 +114,8 @@ def normalize_trade(raw_trade: Dict[str, Any]) -> Optional[Trade]:
             event_type=raw_trade.get("eventType", ""),
             event_timestamp=parse_date(raw_trade.get("eventTimestamp", "")) or datetime.utcnow(),
             execution_timestamp=parse_date(raw_trade.get("executionTimestamp", "")) or datetime.utcnow(),
-            effective_date=raw_trade.get("effectiveDate"),
+            effective_date=effective_date_str,
+            effective_date_dt=effective_date_dt,
             expiration_date=raw_trade.get("expirationDate"),
             notional_amount_leg1=parse_notional(raw_trade.get("notionalAmountLeg1") or ""),
             notional_amount_leg2=parse_notional(raw_trade.get("notionalAmountLeg2") or ""),
@@ -112,7 +134,8 @@ def normalize_trade(raw_trade: Dict[str, Any]) -> Optional[Trade]:
             tenor=calculate_tenor(
                 raw_trade.get("effectiveDate"),
                 raw_trade.get("expirationDate")
-            )
+            ),
+            is_forward=is_forward
         )
     except Exception as e:
         logger.error(f"Error normalizing trade: {e}", exc_info=True)

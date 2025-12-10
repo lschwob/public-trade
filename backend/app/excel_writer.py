@@ -9,7 +9,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 import threading
-from queue import Queue
+from queue import Queue, Empty
 
 from app.config import EXCEL_OUTPUT_DIR
 from app.models import Trade, Strategy, Analytics
@@ -121,7 +121,7 @@ class ExcelWriter:
         """Initialize Strategies sheet headers."""
         headers = [
             "Strategy ID", "Type", "Underlying", "Nb Legs", "Total Notional EUR",
-            "Execution Start", "Execution End", "Package Price"
+            "Execution Start", "Execution End", "Package Price", "Tenor Pair"
         ]
         
         for col, header in enumerate(headers, 1):
@@ -172,6 +172,9 @@ class ExcelWriter:
                     
                     self.workbook.save(self.current_file_path)
                     
+            except Empty:
+                # Queue is empty, continue waiting - this is normal
+                continue
             except Exception as e:
                 if self.running:  # Only log if still running
                     logger.error(f"Error in Excel writer loop: {e}", exc_info=True)
@@ -219,6 +222,7 @@ class ExcelWriter:
                 self.strategies_sheet.cell(row=row, column=6, value=strategy.execution_start.strftime("%Y-%m-%d %H:%M:%S"))
                 self.strategies_sheet.cell(row=row, column=7, value=strategy.execution_end.strftime("%Y-%m-%d %H:%M:%S"))
                 self.strategies_sheet.cell(row=row, column=8, value=strategy.package_transaction_price or "")
+                self.strategies_sheet.cell(row=row, column=9, value=strategy.tenor_pair or "")
                 return
         
         # Add new strategy
@@ -231,6 +235,7 @@ class ExcelWriter:
         self.strategies_sheet.cell(row=row, column=6, value=strategy.execution_start.strftime("%Y-%m-%d %H:%M:%S"))
         self.strategies_sheet.cell(row=row, column=7, value=strategy.execution_end.strftime("%Y-%m-%d %H:%M:%S"))
         self.strategies_sheet.cell(row=row, column=8, value=strategy.package_transaction_price or "")
+        self.strategies_sheet.cell(row=row, column=9, value=strategy.tenor_pair or "")
     
     def _write_analytics(self, analytics: Analytics):
         """Write analytics summary to Analytics sheet."""
@@ -268,4 +273,60 @@ class ExcelWriter:
             self.analytics_sheet.cell(row=row, column=1, value=underlying["name"])
             self.analytics_sheet.cell(row=row, column=2, value=underlying["notional"])
             row += 1
+        
+        # Advanced metrics
+        if analytics.curve_metrics:
+            row += 1
+            self.analytics_sheet.cell(row=row, column=1, value="=== CURVE METRICS ===")
+            row += 1
+            for tenor_data in analytics.curve_metrics.tenor_distribution:
+                self.analytics_sheet.cell(row=row, column=1, value=f"Tenor {tenor_data['tenor']}")
+                self.analytics_sheet.cell(row=row, column=2, value=f"Notional: {tenor_data['notional']}, Count: {tenor_data['count']}, Rate: {tenor_data.get('avg_rate', 'N/A')}")
+                row += 1
+        
+        if analytics.flow_metrics:
+            row += 1
+            self.analytics_sheet.cell(row=row, column=1, value="=== FLOW METRICS ===")
+            row += 1
+            for action, count in analytics.flow_metrics.action_breakdown.items():
+                self.analytics_sheet.cell(row=row, column=1, value=f"Action {action}")
+                self.analytics_sheet.cell(row=row, column=2, value=count)
+                row += 1
+        
+        if analytics.risk_metrics:
+            row += 1
+            self.analytics_sheet.cell(row=row, column=1, value="=== RISK METRICS ===")
+            row += 1
+            self.analytics_sheet.cell(row=row, column=1, value="Total DV01")
+            self.analytics_sheet.cell(row=row, column=2, value=analytics.risk_metrics.total_dv01)
+            row += 1
+            self.analytics_sheet.cell(row=row, column=1, value="Concentration HHI")
+            self.analytics_sheet.cell(row=row, column=2, value=analytics.risk_metrics.concentration_hhi)
+            row += 1
+            self.analytics_sheet.cell(row=row, column=1, value="Top 5 Concentration %")
+            self.analytics_sheet.cell(row=row, column=2, value=analytics.risk_metrics.top5_concentration)
+            row += 1
+        
+        if analytics.realtime_metrics:
+            row += 1
+            self.analytics_sheet.cell(row=row, column=1, value="=== REAL-TIME METRICS ===")
+            row += 1
+            self.analytics_sheet.cell(row=row, column=1, value="Liquidity Score")
+            self.analytics_sheet.cell(row=row, column=2, value=analytics.realtime_metrics.liquidity_score)
+            row += 1
+            self.analytics_sheet.cell(row=row, column=1, value="Volume Last 5min")
+            self.analytics_sheet.cell(row=row, column=2, value=analytics.realtime_metrics.volume_last_5min)
+            row += 1
+            self.analytics_sheet.cell(row=row, column=1, value="Trades Last 5min")
+            self.analytics_sheet.cell(row=row, column=2, value=analytics.realtime_metrics.trades_last_5min)
+            row += 1
+        
+        if analytics.currency_metrics:
+            row += 1
+            self.analytics_sheet.cell(row=row, column=1, value="=== CURRENCY METRICS ===")
+            row += 1
+            for currency_data in analytics.currency_metrics.currency_breakdown:
+                self.analytics_sheet.cell(row=row, column=1, value=f"Currency {currency_data['currency']}")
+                self.analytics_sheet.cell(row=row, column=2, value=f"Notional: {currency_data['notional']}, Count: {currency_data['count']}")
+                row += 1
 

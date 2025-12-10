@@ -74,7 +74,7 @@ function App() {
         {/* Content */}
         <main className="flex-1 overflow-hidden">
           {activeTab === 'blotter' ? (
-            <Blotter trades={trades} />
+            <Blotter trades={trades} strategies={strategies} />
           ) : (
             <Dashboard analytics={analytics} trades={trades} strategies={strategies} />
           )}

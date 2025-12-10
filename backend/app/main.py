@@ -14,7 +14,8 @@ from app.excel_writer import ExcelWriter
 from app.strategy_detector import StrategyDetector
 from app.alert_engine import AlertEngine
 from app.trade_grouper import TradeGrouper
-from app.models import Trade, Strategy, Alert, Analytics
+from app.analytics_engine import AnalyticsEngine
+from app.models import Trade, Strategy, Alert, Analytics, CurveMetrics, FlowMetrics, RiskMetrics, RealTimeMetrics, CurrencyMetrics, StrategyMetrics
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ excel_writer = ExcelWriter()
 strategy_detector = StrategyDetector()
 alert_engine = AlertEngine()
 trade_grouper = TradeGrouper()
+analytics_engine = AnalyticsEngine()
 
 # Memory buffer for trades
 trade_buffer: List[Trade] = []
@@ -59,6 +61,9 @@ daily_stats = {
     "strategy_types": {}  # {type: count}
 }
 
+# Alert buffer for realtime metrics
+recent_alerts: List[Alert] = []
+
 
 async def broadcast_message(message_type: str, data: dict):
     """Broadcast message to all connected WebSocket clients."""
@@ -82,6 +87,12 @@ async def broadcast_message(message_type: str, data: dict):
 
 async def handle_alert(alert: Alert):
     """Handle alert callback."""
+    global recent_alerts
+    # Add to recent alerts buffer
+    recent_alerts.append(alert)
+    # Keep only last 1000 alerts
+    if len(recent_alerts) > 1000:
+        recent_alerts = recent_alerts[-1000:]
     await broadcast_message("alert", alert.dict())
 
 
@@ -266,8 +277,8 @@ async def process_trades(trades: List[Trade]):
 
 
 async def update_analytics():
-    """Update and broadcast analytics."""
-    global daily_stats
+    """Update and broadcast analytics with advanced metrics."""
+    global daily_stats, trade_buffer, recent_alerts
     
     # Calculate top underlyings
     top_underlyings = sorted(
@@ -295,6 +306,35 @@ async def update_analytics():
     if daily_stats["total_trades"] > 0:
         avg_size = daily_stats["total_notional_eur"] / daily_stats["total_trades"]
     
+    # Calculate advanced metrics using analytics engine
+    try:
+        curve_metrics_dict = analytics_engine.calculate_curve_metrics(trade_buffer)
+        flow_metrics_dict = analytics_engine.calculate_flow_metrics(trade_buffer)
+        risk_metrics_dict = analytics_engine.calculate_risk_metrics(trade_buffer)
+        realtime_metrics_dict = analytics_engine.calculate_realtime_metrics(trade_buffer, recent_alerts)
+        currency_metrics_dict = analytics_engine.calculate_currency_metrics(trade_buffer)
+        strategy_metrics_dict = analytics_engine.calculate_strategy_metrics(
+            strategy_detector.get_all_strategies(),
+            trade_buffer
+        )
+        
+        # Create metric objects
+        curve_metrics = CurveMetrics(**curve_metrics_dict)
+        flow_metrics = FlowMetrics(**flow_metrics_dict)
+        risk_metrics = RiskMetrics(**risk_metrics_dict)
+        realtime_metrics = RealTimeMetrics(**realtime_metrics_dict)
+        currency_metrics = CurrencyMetrics(**currency_metrics_dict)
+        strategy_metrics = StrategyMetrics(**strategy_metrics_dict)
+    except Exception as e:
+        logger.error(f"Error calculating advanced metrics: {e}", exc_info=True)
+        # Set to None if calculation fails
+        curve_metrics = None
+        flow_metrics = None
+        risk_metrics = None
+        realtime_metrics = None
+        currency_metrics = None
+        strategy_metrics = None
+    
     analytics = Analytics(
         total_trades=daily_stats["total_trades"],
         total_notional_eur=daily_stats["total_notional_eur"],
@@ -303,7 +343,13 @@ async def update_analytics():
         strategies_count=daily_stats["strategies_count"],
         top_underlyings=top_underlyings,
         trades_per_hour=trades_per_hour,
-        strategy_distribution=strategy_distribution
+        strategy_distribution=strategy_distribution,
+        curve_metrics=curve_metrics,
+        flow_metrics=flow_metrics,
+        risk_metrics=risk_metrics,
+        realtime_metrics=realtime_metrics,
+        currency_metrics=currency_metrics,
+        strategy_metrics=strategy_metrics
     )
     
     # Write to Excel

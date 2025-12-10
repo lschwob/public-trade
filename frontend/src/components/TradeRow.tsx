@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Trade } from '../types/trade';
+import { Trade, Strategy } from '../types/trade';
 import { ColumnConfig } from './Blotter';
 
 interface TradeRowProps {
@@ -10,6 +10,7 @@ interface TradeRowProps {
   hasLegs?: boolean;
   onToggleExpand?: () => void;
   visibleColumns: ColumnConfig[];
+  strategies?: Strategy[];
 }
 
 export default function TradeRow({
@@ -19,7 +20,8 @@ export default function TradeRow({
   isExpanded = false,
   hasLegs = false,
   onToggleExpand,
-  visibleColumns
+  visibleColumns,
+  strategies = []
 }: TradeRowProps) {
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -165,14 +167,55 @@ export default function TradeRow({
         );
       
       case 'strategy':
+        // Format strategy label
+        const formatStrategyLabel = (trade: Trade, strategy?: Strategy): string => {
+          // If trade is in a package but no strategy detected, it's Multiline Compression
+          if (trade.package_indicator && (!trade.strategy_id || !strategy)) {
+            return 'Multiline Compression';
+          }
+          
+          // If no strategy and not a package, it's an outright (directional trade)
+          if (!trade.strategy_id || !strategy) {
+            return 'Outright';
+          }
+          
+          // Format tenor pair with 's' notation (10s30s instead of 10Y/30Y)
+          const tenorPair = strategy.tenor_pair
+            ?.replace(/Y/g, 's')
+            .replace(/\//g, '');
+          
+          // Get strategy type base (Spread, Butterfly, Curve)
+          const baseType = strategy.strategy_type.split(' ').pop() || strategy.strategy_type;
+          
+          // Return formatted label
+          if (tenorPair) {
+            return `${baseType} ${tenorPair}`;
+          }
+          return baseType;
+        };
+        
+        const strategy = strategies.find(s => s.strategy_id === trade.strategy_id);
+        const strategyLabel = formatStrategyLabel(trade, strategy);
+        
+        // Color based on type
+        const getStrategyColor = (label: string) => {
+          if (label === 'Outright') return 'bg-gray-100 text-gray-700';
+          if (label === 'Multiline Compression') return 'bg-amber-100 text-amber-800';
+          if (label.startsWith('Spread')) return 'bg-blue-100 text-blue-800';
+          if (label.startsWith('Butterfly')) return 'bg-purple-100 text-purple-800';
+          if (label.startsWith('Curve')) return 'bg-green-100 text-green-800';
+          return 'bg-yellow-100 text-yellow-800';
+        };
+        
         return (
-          <div>
-            {trade.strategy_id ? (
-              <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs font-mono">
-                {trade.strategy_id}
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${getStrategyColor(strategyLabel)}`}>
+              {strategyLabel}
+            </span>
+            {trade.is_forward && (
+              <span className="px-1.5 py-0.5 bg-orange-100 text-orange-800 rounded text-xs font-medium whitespace-nowrap">
+                FWD
               </span>
-            ) : (
-              <span className="text-gray-400">-</span>
             )}
           </div>
         );
@@ -226,15 +269,17 @@ export default function TradeRow({
           isLeg ? 'bg-gray-50 border-l-4 border-blue-300' : ''
         }`}
       >
-        {visibleColumns.map(col => (
-          <td
-            key={col.id}
-            className="px-3 py-3 border-r border-gray-200 text-sm align-middle"
-            style={{ width: `${col.width}px` }}
-          >
-            {renderCell(col.id)}
-          </td>
-        ))}
+              {visibleColumns.map(col => (
+                <td
+                  key={col.id}
+                  className="px-3 py-3 border-r border-gray-200 text-sm align-middle overflow-hidden"
+                  style={{ width: `${col.width}px`, maxWidth: `${col.width}px` }}
+                >
+                  <div className="truncate" style={{ maxWidth: `${col.width - 24}px` }}>
+                    {renderCell(col.id)}
+                  </div>
+                </td>
+              ))}
       </tr>
       
       {/* Expanded Grouped Trades Dropdown */}

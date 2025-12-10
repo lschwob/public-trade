@@ -14,7 +14,11 @@ class Trade(BaseModel):
     event_timestamp: datetime
     execution_timestamp: datetime
     effective_date: Optional[str] = None
+    effective_date_dt: Optional[datetime] = None  # Parsed effective date
     expiration_date: Optional[str] = None
+    
+    # Forward indicator
+    is_forward: bool = False
     
     # Notionals
     notional_amount_leg1: float
@@ -63,6 +67,10 @@ class Strategy(BaseModel):
     execution_start: datetime
     execution_end: datetime
     package_transaction_price: Optional[str] = None
+    
+    # Tenor pair information
+    tenor_pair: Optional[str] = None  # "10Y/30Y", "2Y/5Y/10Y", etc.
+    tenor_legs: Optional[List[str]] = None  # ["10Y", "30Y"]
 
 
 class Alert(BaseModel):
@@ -124,6 +132,7 @@ class StrategyMetrics(BaseModel):
     strategy_avg_notional: List[dict]  # [{"type": str, "avg_notional": float}]
     strategy_tenor_preference: List[dict]  # [{"type": str, "tenors": List[str]}]
     package_vs_custom: Dict[str, int]  # {"package": count, "custom": count}
+    tenor_pair_distribution: List[dict]  # [{"tenor_pair": "10Y/30Y", "count": 5, "total_notional": 1000000000, "avg_notional": 200000000}]
 
 
 class Analytics(BaseModel):
