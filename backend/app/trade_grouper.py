@@ -1,4 +1,15 @@
-"""Trade grouper module for grouping related trades."""
+"""
+Trade grouper module for grouping related trades.
+
+This module groups trades that share common characteristics (same timestamp,
+same underlying, same strategy) for display purposes in the frontend.
+Grouped trades can be expanded to show individual legs.
+
+Grouping criteria:
+- Same execution timestamp (within 1 second)
+- Same underlying + same timestamp window
+- Same strategy_id
+"""
 
 import logging
 from datetime import datetime, timedelta
@@ -12,7 +23,18 @@ logger = logging.getLogger(__name__)
 
 
 class TradeGrouper:
-    """Groups related trades together for display."""
+    """
+    Groups related trades together for display.
+    
+    This class identifies trades that should be grouped together in the
+    frontend blotter. Grouped trades are displayed as a single row
+    that can be expanded to show all individual trades.
+    
+    Attributes:
+        trade_groups: Dict mapping group_id to list of trade IDs
+        trade_to_group: Dict mapping trade_id to group_id
+        group_counter: Counter for generating unique group IDs
+    """
     
     def __init__(self):
         # Map group_id to list of trade IDs

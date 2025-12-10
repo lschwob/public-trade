@@ -1,7 +1,29 @@
+/**
+ * TradeRow component for rendering a single trade row in the blotter.
+ * 
+ * This component handles:
+ * - Display of trade data in table cells
+ * - Expansion of package legs (DTCC packages)
+ * - Expansion of grouped trades (same timestamp/underlying)
+ * - Strategy badge display with tenor pairs (e.g., "Spread 10s30s")
+ * - Forward trade indicator (FWD badge)
+ * - Highlighting for new trades
+ * 
+ * Strategy labels:
+ * - "Outright": Single trade, no package, no strategy
+ * - "Multiline Compression": Package but no detected strategy
+ * - "Spread 10s30s": Detected spread with tenor pair
+ * - "Butterfly 10s15s30s": Detected butterfly with tenor legs
+ * - "Curve ...": Detected curve trade
+ */
+
 import { useState } from 'react';
 import { Trade, Strategy } from '../types/trade';
 import { ColumnConfig } from './Blotter';
 
+/**
+ * Props for the TradeRow component.
+ */
 interface TradeRowProps {
   trade: Trade;
   highlighted: boolean;

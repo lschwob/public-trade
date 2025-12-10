@@ -1,4 +1,15 @@
-"""Alert engine with EUR-based thresholds."""
+"""
+Alert engine with EUR-based thresholds.
+
+This module generates alerts for:
+- Large trades (exceeding EUR thresholds)
+- Strategy packages (multi-leg strategies)
+- Trend alerts (high volume in 5-minute windows)
+
+All alerts are based on notional amounts converted to EUR using cached
+exchange rates. The engine prevents duplicate alerts by tracking
+alerted_trade_ids and alerted_strategy_ids.
+"""
 
 import logging
 import asyncio
@@ -16,11 +27,18 @@ from app.models import Trade, Strategy, Alert
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
-
 
 class ExchangeRateCache:
-    """Cache for exchange rates with TTL."""
+    """
+    Cache for exchange rates with TTL (Time To Live).
+    
+    Caches exchange rates from the external API to reduce API calls.
+    Rates are refreshed when the cache expires (EXCHANGE_RATE_CACHE_TTL).
+    
+    Attributes:
+        rates: Dict mapping currency to EUR exchange rate
+        last_update: Timestamp of last cache update
+    """
     
     def __init__(self):
         self.rates: Dict[str, float] = {}

@@ -1,4 +1,17 @@
-"""Excel writer for continuous daily trade logging."""
+"""
+Excel writer for continuous daily trade logging.
+
+This module provides thread-safe Excel file writing with:
+- Daily file rotation (one file per day: trades_YYYYMMDD.xlsx)
+- Three sheets: Trades, Strategies, Analytics
+- Background thread for asynchronous writes
+- Duplicate prevention (updates existing trades instead of creating duplicates)
+- Trade loading on startup (for state persistence)
+
+The ExcelWriter uses a queue-based architecture where write operations
+are queued and processed by a background thread, ensuring non-blocking
+writes and thread safety.
+"""
 
 import asyncio
 import logging
@@ -18,7 +31,31 @@ logger = logging.getLogger(__name__)
 
 
 class ExcelWriter:
-    """Thread-safe Excel writer with daily file rotation."""
+    """
+    Thread-safe Excel writer with daily file rotation.
+    
+    This class manages continuous writing to Excel files with the following features:
+    - Daily file rotation (creates new file each day)
+    - Thread-safe writes via background thread and queue
+    - Duplicate prevention (updates existing trades by ID)
+    - Automatic file loading on startup
+    - Three sheets: Trades, Strategies, Analytics
+    
+    The writer uses a queue-based architecture where write operations are
+    queued and processed asynchronously by a background thread.
+    
+    Attributes:
+        current_date: Current date for file naming
+        write_queue: Queue for write operations (thread-safe)
+        lock: Thread lock for critical sections
+        workbook: Current openpyxl Workbook instance
+        trades_sheet: Worksheet for trades
+        strategies_sheet: Worksheet for strategies
+        analytics_sheet: Worksheet for analytics
+        current_file_path: Path to current Excel file
+        running: Flag to control background thread
+        writer_thread: Background thread for processing writes
+    """
     
     def __init__(self):
         self.current_date = date.today()

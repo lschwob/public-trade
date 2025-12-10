@@ -1,13 +1,36 @@
+/**
+ * Blotter component for real-time trade display.
+ * 
+ * This component displays trades in a table format with:
+ * - Real-time updates via WebSocket
+ * - Advanced filtering (Action, Tenor, Forward/Spot, Strategy Type, Platform, Tenor Pair)
+ * - Column visibility customization (persisted in localStorage)
+ * - Trade grouping (trades with same timestamp/underlying)
+ * - Auto-scroll with highlighting for new trades
+ * - Fixed column widths for consistent layout
+ * 
+ * The blotter only shows one trade per explicit group (grouped_trades),
+ * but displays all individual trades separately.
+ */
+
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Trade, Strategy } from '../types/trade';
 import TradeRow from './TradeRow';
 import ColumnSelector from './ColumnSelector';
 
+/**
+ * Props for the Blotter component.
+ */
 interface BlotterProps {
+  /** Array of trades to display */
   trades: Trade[];
+  /** Optional array of detected strategies */
   strategies?: Strategy[];
 }
 
+/**
+ * Configuration for a table column.
+ */
 export interface ColumnConfig {
   id: string;
   label: string;

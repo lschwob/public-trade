@@ -1,4 +1,15 @@
-"""Pydantic models for trade data structures."""
+"""
+Pydantic models for trade data structures.
+
+This module defines all data models used throughout the application using Pydantic
+for validation and serialization. Models include:
+- Trade: Individual trade data from DTCC API
+- Strategy: Multi-leg strategy detection results
+- Alert: Alert notifications
+- Analytics: Various analytics metrics and aggregations
+
+All models use Pydantic BaseModel for automatic validation and JSON serialization.
+"""
 
 from datetime import datetime
 from typing import Optional, List, Dict
@@ -6,7 +17,41 @@ from pydantic import BaseModel, Field
 
 
 class Trade(BaseModel):
-    """Normalized trade model."""
+    """
+    Normalized trade model representing an Interest Rate Swap trade.
+    
+    This model represents a single trade from the DTCC API, normalized and enriched
+    with computed fields like notional in EUR, tenor, and forward trade detection.
+    
+    Attributes:
+        dissemination_identifier: Unique identifier for the trade (primary key)
+        original_dissemination_identifier: Original ID if trade was modified
+        action_type: Trade action type (NEWT, MODI, TERM)
+        event_type: Type of event (typically "TRADE")
+        event_timestamp: When the event occurred
+        execution_timestamp: When the trade was executed
+        effective_date: Effective date of the swap (ISO string)
+        effective_date_dt: Parsed effective date as datetime
+        expiration_date: Expiration/maturity date of the swap
+        is_forward: Whether this is a forward-starting swap (execution > 2 days in future)
+        notional_amount_leg1: Notional amount for leg 1
+        notional_amount_leg2: Notional amount for leg 2
+        notional_currency_leg1: Currency for leg 1 (e.g., "USD", "EUR")
+        notional_currency_leg2: Currency for leg 2
+        fixed_rate_leg1: Fixed rate for leg 1 (as decimal, e.g., 0.025 for 2.5%)
+        fixed_rate_leg2: Fixed rate for leg 2
+        spread_leg1: Spread for leg 1 (if applicable)
+        spread_leg2: Spread for leg 2 (if applicable)
+        unique_product_identifier: Product identifier
+        unique_product_identifier_short_name: Short name for the product
+        unique_product_identifier_underlier_name: Underlying name (e.g., "USD-LIBOR-BBA")
+        platform_identifier: Trading platform identifier
+        package_indicator: Whether this trade is part of a package
+        package_transaction_price: Package transaction price (used for grouping)
+        strategy_id: Detected strategy ID (if part of a multi-leg strategy)
+        notional_eur: Notional amount converted to EUR
+        tenor: Calculated tenor (e.g., "2Y", "5Y", "10Y", "30Y")
+    """
     dissemination_identifier: str
     original_dissemination_identifier: Optional[str] = None
     action_type: str  # NEWT, MODI, TERM
@@ -58,7 +103,25 @@ class Trade(BaseModel):
 
 
 class Strategy(BaseModel):
-    """Strategy model for multi-leg trades."""
+    """
+    Strategy model for multi-leg Interest Rate Swap strategies.
+    
+    Represents a detected multi-leg strategy such as spreads, butterflies, or curve trades.
+    Strategies are detected by grouping trades with the same package_transaction_price
+    or by analyzing trades with the same underlying within a time window.
+    
+    Attributes:
+        strategy_id: Unique identifier for the strategy
+        strategy_type: Type of strategy (e.g., "Spread", "Butterfly", "Curve")
+        underlying_name: Name of the underlying (e.g., "USD-LIBOR-BBA")
+        legs: List of trade dissemination_identifiers that make up this strategy
+        total_notional_eur: Sum of all leg notionals in EUR
+        execution_start: Timestamp of the first leg execution
+        execution_end: Timestamp of the last leg execution
+        package_transaction_price: Package price if detected from DTCC package indicator
+        tenor_pair: Formatted tenor pair (e.g., "10Y/30Y" for a spread)
+        tenor_legs: List of individual tenors in the strategy (e.g., ["10Y", "30Y"])
+    """
     strategy_id: str
     strategy_type: str  # Spread, Butterfly, Curve
     underlying_name: str
@@ -74,7 +137,22 @@ class Strategy(BaseModel):
 
 
 class Alert(BaseModel):
-    """Alert model."""
+    """
+    Alert model for trade and strategy notifications.
+    
+    Alerts are generated when trades exceed certain thresholds or when strategies
+    are detected. Alerts are sent to connected WebSocket clients in real-time.
+    
+    Attributes:
+        alert_id: Unique identifier for the alert
+        alert_type: Type of alert (LargeTrade, StrategyPackage, Trend)
+        severity: Alert severity level (critical, high, medium)
+        timestamp: When the alert was generated
+        message: Human-readable alert message
+        trade_id: Associated trade ID (if applicable)
+        strategy_id: Associated strategy ID (if applicable)
+        notional_eur: Notional amount in EUR that triggered the alert
+    """
     alert_id: str
     alert_type: str  # LargeTrade, StrategyPackage, Trend
     severity: str  # critical, high, medium

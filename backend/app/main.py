@@ -1,4 +1,25 @@
-"""FastAPI application with WebSocket support."""
+"""
+FastAPI application with WebSocket support for real-time IRS monitoring.
+
+This is the main application module that orchestrates:
+- DTCC API polling
+- Trade processing and normalization
+- Strategy detection
+- Alert generation
+- Excel file writing
+- WebSocket broadcasting
+- Analytics calculation
+
+The application maintains a global state with:
+- Trade buffer (in-memory, max 1000 trades)
+- Strategy detector
+- Alert engine
+- Excel writer
+- Analytics engine
+
+All trades are persisted to daily Excel files and loaded on startup to maintain
+state across application restarts.
+"""
 
 import asyncio
 import logging
@@ -20,9 +41,13 @@ from app.models import Trade, Strategy, Alert, Analytics, CurveMetrics, FlowMetr
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="IRS Monitoring API")
+# FastAPI application instance
+app = FastAPI(title="IRS Monitoring API", description="Real-time Interest Rate Swaps monitoring via DTCC API")
 
-# CORS middleware
+# ============================================================================
+# CORS Configuration
+# ============================================================================
+# Allow all origins for development (restrict in production)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,26 +56,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global state
+# ============================================================================
+# Global State Initialization
+# ============================================================================
+
+# Excel writer for continuous daily file logging
 excel_writer = ExcelWriter()
+
+# Strategy detector for multi-leg trade identification
 strategy_detector = StrategyDetector()
+
+# Alert engine for EUR-based threshold alerts
 alert_engine = AlertEngine()
+
+# Trade grouper for grouping related trades
 trade_grouper = TradeGrouper()
+
+# Analytics engine for advanced metrics calculation
 analytics_engine = AnalyticsEngine()
 
-# Memory buffer for trades
+# Memory buffer for trades (max 1000 trades, oldest removed when limit reached)
 trade_buffer: List[Trade] = []
 
 # Track seen trade IDs to avoid duplicates (using dissemination_identifier)
+# This set persists across buffer cleanups to prevent re-processing
 seen_trade_ids: Set[str] = set()
 
 # Map package_transaction_price to list of legs for package trades
+# Used to attach package legs to parent trades for frontend display
 package_legs: dict[str, List[Trade]] = {}
 
-# WebSocket connections
+# WebSocket connections for real-time updates
 active_connections: Set[WebSocket] = set()
 
-# Analytics state
+# Daily statistics for analytics
 daily_stats = {
     "total_trades": 0,
     "total_notional_eur": 0.0,
@@ -61,12 +100,25 @@ daily_stats = {
     "strategy_types": {}  # {type: count}
 }
 
-# Alert buffer for realtime metrics
+# Alert buffer for realtime metrics (last 1000 alerts)
 recent_alerts: List[Alert] = []
 
 
 async def broadcast_message(message_type: str, data: dict):
-    """Broadcast message to all connected WebSocket clients."""
+    """
+    Broadcast message to all connected WebSocket clients.
+    
+    Sends a JSON message to all active WebSocket connections. Automatically
+    removes disconnected clients from the active_connections set.
+    
+    Args:
+        message_type: Type of message (e.g., "trade_update", "alert", "analytics_update")
+        data: Message payload (dict)
+        
+    Note:
+        Disconnected clients are automatically removed from active_connections
+        to prevent memory leaks.
+    """
     message = {
         "type": message_type,
         "data": data,
@@ -86,7 +138,15 @@ async def broadcast_message(message_type: str, data: dict):
 
 
 async def handle_alert(alert: Alert):
-    """Handle alert callback."""
+    """
+    Handle alert callback from AlertEngine.
+    
+    Adds the alert to the recent_alerts buffer (max 1000) and broadcasts
+    it to all connected WebSocket clients.
+    
+    Args:
+        alert: Alert object to handle
+    """
     global recent_alerts
     # Add to recent alerts buffer
     recent_alerts.append(alert)
@@ -97,7 +157,27 @@ async def handle_alert(alert: Alert):
 
 
 async def process_trades(trades: List[Trade]):
-    """Process new trades: write to Excel, detect strategies, generate alerts."""
+    """
+    Process new trades: write to Excel, detect strategies, generate alerts.
+    
+    This is the main trade processing function called by the Poller whenever
+    new trades are fetched from the DTCC API. It:
+    1. Filters out duplicate trades (using dissemination_identifier)
+    2. Adds trades to the memory buffer
+    3. Writes trades to Excel (via ExcelWriter)
+    4. Detects strategies (via StrategyDetector)
+    5. Generates alerts (via AlertEngine, only for new trades)
+    6. Groups related trades (via TradeGrouper)
+    7. Updates daily statistics
+    8. Broadcasts updates via WebSocket
+    
+    Args:
+        trades: List of new Trade objects from DTCC API
+        
+    Note:
+        Only truly new trades (not in seen_trade_ids) trigger alerts to
+        prevent duplicate notifications.
+    """
     global trade_buffer, daily_stats, seen_trade_ids, package_legs
     
     if not trades:

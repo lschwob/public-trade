@@ -1,4 +1,17 @@
-"""Advanced analytics calculation engine for professional trading dashboard."""
+"""
+Advanced analytics calculation engine for professional trading dashboard.
+
+This module provides comprehensive analytics calculations including:
+- Curve analysis (tenor distribution, rate evolution, spreads)
+- Flow metrics (action breakdown, platform market share, flow direction)
+- Risk metrics (DV01, concentration HHI, percentiles)
+- Real-time metrics (volume, liquidity score, rate velocity)
+- Currency breakdown
+- Strategy intelligence
+
+All calculations are optimized for real-time performance and provide
+insights that professional IRS traders need for market analysis.
+"""
 
 import logging
 from datetime import datetime, timedelta
@@ -12,7 +25,19 @@ logger = logging.getLogger(__name__)
 
 
 class AnalyticsEngine:
-    """Advanced analytics calculation engine."""
+    """
+    Advanced analytics calculation engine.
+    
+    This class provides comprehensive analytics calculations for the trading
+    dashboard. It maintains history for rate velocity and volume momentum
+    calculations.
+    
+    Attributes:
+        rate_history: Historical rate data for velocity calculations
+        volume_history: Historical volume data for momentum calculations
+        max_history_size: Maximum size of history buffers (1000)
+        tenor_order: Standard tenor ordering for consistent sorting
+    """
     
     def __init__(self):
         self.rate_history: List[Dict] = []  # Store historical rates for velocity

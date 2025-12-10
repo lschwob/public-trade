@@ -1,3 +1,16 @@
+/**
+ * TypeScript type definitions for trade data structures.
+ * 
+ * These interfaces mirror the Pydantic models from the backend to ensure
+ * type safety across the full stack.
+ */
+
+/**
+ * Trade interface representing an Interest Rate Swap trade.
+ * 
+ * This interface represents a normalized trade from the DTCC API with
+ * all computed fields like notional in EUR, tenor, and forward detection.
+ */
 export interface Trade {
   dissemination_identifier: string;
   original_dissemination_identifier?: string;
@@ -35,6 +48,12 @@ export interface Trade {
   group_id?: string;  // Group identifier
 }
 
+/**
+ * Strategy interface for multi-leg Interest Rate Swap strategies.
+ * 
+ * Represents a detected multi-leg strategy such as spreads, butterflies,
+ * or curve trades with tenor pair information.
+ */
 export interface Strategy {
   strategy_id: string;
   strategy_type: string;

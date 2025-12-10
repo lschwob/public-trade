@@ -1,4 +1,18 @@
-"""Strategy detection module for multi-leg trades."""
+"""
+Strategy detection module for multi-leg Interest Rate Swap trades.
+
+This module detects multi-leg strategies from individual trades by:
+1. Package strategies: Trades with same package_transaction_price (DTCC-declared)
+2. Custom strategies: Trades with same underlying within a time window
+
+Strategy types:
+- Spread: 2 legs (e.g., 10Y/30Y spread)
+- Butterfly: 3 legs (e.g., 10Y/15Y/30Y butterfly)
+- Curve: 4+ legs (curve trade)
+
+Only NEWT (new) trades are considered for strategy detection, MODI (modified)
+trades are excluded to prevent false positives.
+"""
 
 import logging
 from datetime import datetime, timedelta
@@ -13,7 +27,21 @@ logger = logging.getLogger(__name__)
 
 
 class StrategyDetector:
-    """Detects multi-leg strategies from trades."""
+    """
+    Detects multi-leg strategies from individual trades.
+    
+    This class maintains a buffer of recent trades and detects strategies by:
+    1. Grouping trades with the same package_transaction_price (DTCC packages)
+    2. Grouping trades with the same underlying within STRATEGY_TIME_WINDOW (custom)
+    
+    Only trades with action_type="NEWT" are considered for strategy detection.
+    
+    Attributes:
+        recent_trades: Buffer of recent trades for custom strategy detection
+        package_strategies: Dict of strategies detected from DTCC packages
+        custom_strategies: Dict of strategies detected from custom grouping
+        trade_to_strategy: Map from trade ID to strategy ID
+    """
     
     def __init__(self):
         # Buffer of recent trades for custom detection
