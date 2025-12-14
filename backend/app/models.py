@@ -12,7 +12,7 @@ All models use Pydantic BaseModel for automatic validation and JSON serializatio
 """
 
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
@@ -231,5 +231,129 @@ class Analytics(BaseModel):
     realtime_metrics: Optional[RealTimeMetrics] = None
     currency_metrics: Optional[CurrencyMetrics] = None
     strategy_metrics: Optional[StrategyMetrics] = None
+
+
+# ============================================================================
+# Pro Trader Metrics Models for EUR IRS Market Makers
+# ============================================================================
+
+class TenorDetail(BaseModel):
+    """Detailed metrics for a specific tenor in EUR IRS."""
+    tenor: str  # "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"
+    high: Optional[float] = None  # Highest rate in window (%)
+    low: Optional[float] = None  # Lowest rate in window
+    mid: Optional[float] = None  # Average rate
+    vwap: Optional[float] = None  # Volume Weighted Average Price
+    last: Optional[float] = None  # Last executed rate
+    volume: float  # Total volume in EUR
+    trade_count: int
+    avg_trade_size: float  # Average trade size in EUR
+    bid_ask_spread: Optional[float] = None  # Estimated bid/ask spread in bps
+    volatility: Optional[float] = None  # Intraday volatility (annualized)
+    price_impact: Optional[float] = None  # Average impact of 100M EUR trade on mid rate (bps)
+
+
+class SpreadDetail(BaseModel):
+    """Details for a specific inter-tenor spread."""
+    current: float  # Current spread in bps
+    high: float  # Highest spread in window
+    low: float  # Lowest spread in window
+    change_bps: float  # Change from previous period in bps
+    z_score: Optional[float] = None  # Z-score vs historical
+
+
+class SpreadMetrics(BaseModel):
+    """Inter-tenor spread metrics for EUR IRS."""
+    spread_2y_5y: SpreadDetail
+    spread_5y_10y: SpreadDetail
+    spread_10y_30y: SpreadDetail
+    spread_2y_10y: SpreadDetail
+    spread_2y_30y: SpreadDetail
+
+
+class ProFlowMetrics(BaseModel):
+    """Order flow imbalance metrics for Market Making."""
+    net_flow_direction: str  # "BUY_PRESSURE" | "SELL_PRESSURE" | "BALANCED"
+    flow_intensity: float  # Score 0-100
+    buy_volume_ratio: float  # Ratio of buy volume vs sell (0-1)
+    dominant_tenor: str  # Tenor with most volume
+    new_trades_count: int  # Number of NEWT in period
+    large_block_count: int  # Number of trades >500M EUR
+    flow_by_tenor: Dict[str, str]  # Flow direction per tenor
+
+
+class VolatilityMetrics(BaseModel):
+    """Volatility metrics for EUR IRS."""
+    realized_volatility: float  # Realized volatility (annualized)
+    rate_velocity: Dict[str, float]  # Rate velocity (bps/min) per tenor
+    volatility_by_tenor: Dict[str, float]  # Volatility per tenor
+    volatility_percentile: float  # Percentile vs 30d history
+
+
+class ExecutionMetrics(BaseModel):
+    """Execution quality metrics for Market Making."""
+    avg_slippage: float  # Average slippage vs mid rate (bps)
+    spread_crossing_rate: float  # % of trades crossing spread
+    effective_spread: float  # Effective spread average (bps)
+    vwap_deviation: float  # Average deviation vs VWAP (bps)
+    execution_quality_score: float  # Composite score 0-100
+
+
+class PriceImpactMetrics(BaseModel):
+    """Price impact analysis metrics."""
+    impact_by_size_bucket: Dict[str, float]  # Average impact per bucket (bps)
+    max_impact_trade: Optional[Dict] = None  # Trade with highest impact
+    impact_velocity: float  # Recovery velocity after impact (minutes)
+
+
+class ForwardCurveMetrics(BaseModel):
+    """Forward curve analysis metrics."""
+    forward_rates: Dict[str, float]  # Forward rates by tenor
+    spot_vs_forward: Dict[str, float]  # Spot vs forward spread (bps)
+    curve_shape: str  # "NORMAL" | "INVERTED" | "FLAT" | "STEEP"
+    basis_swaps: Dict[str, float]  # Tenor basis analysis
+
+
+class HistoricalContext(BaseModel):
+    """Historical context for comparison."""
+    percentile_30d: Dict[str, float]  # Percentile vs 30 days
+    percentile_90d: Dict[str, float]  # Percentile vs 90 days
+    z_score: Dict[str, float]  # Z-score vs historical mean
+    avg_30d: Dict[str, float]  # 30-day average
+    avg_90d: Dict[str, float]  # 90-day average
+    deviation_from_avg: Dict[str, float]  # Deviation from average (bps)
+
+
+class ProAlert(BaseModel):
+    """Pro trader alert for Market Makers."""
+    alert_id: str
+    alert_type: str  # "ABNORMAL_SPREAD" | "LARGE_BLOCK" | "CURVE_INVERSION" | "VOLATILITY_SPIKE"
+    severity: str  # "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+    tenor: Optional[str] = None
+    current_value: float
+    threshold: float
+    timestamp: datetime
+    message: str
+
+
+class ProTraderMetrics(BaseModel):
+    """Complete pro trader metrics container."""
+    time_window: int  # Window in minutes
+    tenor_metrics: Dict[str, TenorDetail]
+    spread_metrics: SpreadMetrics
+    flow_metrics: ProFlowMetrics
+    volatility_metrics: VolatilityMetrics
+    execution_metrics: ExecutionMetrics
+    price_impact_metrics: PriceImpactMetrics
+    forward_curve_metrics: ForwardCurveMetrics
+    historical_context: HistoricalContext
+    alerts: List[ProAlert]
+
+
+class ProTraderDelta(BaseModel):
+    """Delta comparison between two time periods."""
+    tenor_deltas: Dict[str, Dict[str, float]]  # {tenor: {mid_change, volume_change, spread_change}}
+    spread_deltas: Dict[str, float]  # Spread changes in bps
+    flow_delta: Dict[str, Any]  # Flow direction and intensity changes
 
 

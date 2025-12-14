@@ -36,7 +36,10 @@ from app.strategy_detector import StrategyDetector
 from app.alert_engine import AlertEngine
 from app.trade_grouper import TradeGrouper
 from app.analytics_engine import AnalyticsEngine
-from app.models import Trade, Strategy, Alert, Analytics, CurveMetrics, FlowMetrics, RiskMetrics, RealTimeMetrics, CurrencyMetrics, StrategyMetrics
+from app.models import (
+    Trade, Strategy, Alert, Analytics, CurveMetrics, FlowMetrics, RiskMetrics,
+    RealTimeMetrics, CurrencyMetrics, StrategyMetrics, ProTraderMetrics, ProTraderDelta
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -415,6 +418,36 @@ async def update_analytics():
         currency_metrics = None
         strategy_metrics = None
     
+    # Calculate Pro Trader metrics for all time windows
+    pro_trader_metrics = {}
+    pro_trader_deltas = None
+    
+    try:
+        # Load historical data (placeholder - would need actual implementation)
+        historical_30d = analytics_engine.load_historical_trades(30)
+        historical_90d = analytics_engine.load_historical_trades(90)
+        
+        # Calculate metrics for all time windows
+        for window in [10, 15, 20, 30, 60]:
+            metrics = analytics_engine.calculate_pro_trader_metrics(
+                trade_buffer,
+                window,
+                historical_30d,
+                historical_90d
+            )
+            pro_trader_metrics[f"{window}min"] = metrics
+        
+        # Calculate deltas (10min vs 1h)
+        if "10min" in pro_trader_metrics and "60min" in pro_trader_metrics:
+            pro_trader_deltas = analytics_engine.calculate_pro_trader_deltas(
+                pro_trader_metrics["10min"],
+                pro_trader_metrics["60min"]
+            )
+    except Exception as e:
+        logger.error(f"Error calculating pro trader metrics: {e}", exc_info=True)
+        pro_trader_metrics = {}
+        pro_trader_deltas = None
+    
     analytics = Analytics(
         total_trades=daily_stats["total_trades"],
         total_notional_eur=daily_stats["total_notional_eur"],
@@ -435,8 +468,13 @@ async def update_analytics():
     # Write to Excel
     excel_writer.update_analytics(analytics)
     
-    # Broadcast
-    await broadcast_message("analytics_update", analytics.dict())
+    # Broadcast analytics with pro trader metrics
+    analytics_dict = analytics.dict()
+    analytics_dict["pro_trader_metrics"] = pro_trader_metrics
+    if pro_trader_deltas:
+        analytics_dict["pro_trader_deltas"] = pro_trader_deltas
+    
+    await broadcast_message("analytics_update", analytics_dict)
 
 
 @app.on_event("startup")

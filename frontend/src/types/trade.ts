@@ -137,6 +137,132 @@ export interface Analytics {
   realtime_metrics?: RealTimeMetrics;
   currency_metrics?: CurrencyMetrics;
   strategy_metrics?: StrategyMetrics;
+  pro_trader_metrics?: Record<string, ProTraderMetrics>;
+  pro_trader_deltas?: ProTraderDelta;
+}
+
+// ============================================================================
+// Pro Trader Metrics Types for EUR IRS Market Makers
+// ============================================================================
+
+export interface TenorDetail {
+  tenor: string; // "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"
+  high: number | null;
+  low: number | null;
+  mid: number | null;
+  vwap: number | null;
+  last: number | null;
+  volume: number; // en EUR
+  trade_count: number;
+  avg_trade_size: number; // en EUR
+  bid_ask_spread: number | null; // en bps
+  volatility: number | null; // annualisée
+  price_impact: number | null; // bps pour 100M EUR
+}
+
+export interface SpreadDetail {
+  current: number; // en bps
+  high: number;
+  low: number;
+  change_bps: number;
+  z_score: number | null; // vs historique
+}
+
+export interface SpreadMetrics {
+  spread_2y_5y: SpreadDetail;
+  spread_5y_10y: SpreadDetail;
+  spread_10y_30y: SpreadDetail;
+  spread_2y_10y: SpreadDetail;
+  spread_2y_30y: SpreadDetail;
+}
+
+export interface ProFlowMetrics {
+  net_flow_direction: 'BUY_PRESSURE' | 'SELL_PRESSURE' | 'BALANCED';
+  flow_intensity: number; // 0-100
+  buy_volume_ratio: number; // 0-1
+  dominant_tenor: string;
+  new_trades_count: number;
+  large_block_count: number; // >500M EUR
+  flow_by_tenor: Record<string, 'BUY_PRESSURE' | 'SELL_PRESSURE' | 'BALANCED'>;
+}
+
+export interface VolatilityMetrics {
+  realized_volatility: number; // annualisée
+  rate_velocity: Record<string, number>; // bps/min par tenor
+  volatility_by_tenor: Record<string, number>;
+  volatility_percentile: number; // vs 30j
+}
+
+export interface ExecutionMetrics {
+  avg_slippage: number; // bps
+  spread_crossing_rate: number; // %
+  effective_spread: number; // bps
+  vwap_deviation: number; // bps
+  execution_quality_score: number; // 0-100
+}
+
+export interface PriceImpactMetrics {
+  impact_by_size_bucket: Record<string, number>; // bps par bucket
+  max_impact_trade: {
+    trade_id: string;
+    impact: number; // bps
+    size: number; // EUR
+  } | null;
+  impact_velocity: number; // minutes pour récupération
+}
+
+export interface ForwardCurveMetrics {
+  forward_rates: Record<string, number>; // taux forward par tenor
+  spot_vs_forward: Record<string, number>; // écart en bps
+  curve_shape: 'NORMAL' | 'INVERTED' | 'FLAT' | 'STEEP';
+  basis_swaps: Record<string, number>; // tenor basis
+}
+
+export interface HistoricalContext {
+  percentile_30d: Record<string, number>; // par tenor/spread
+  percentile_90d: Record<string, number>;
+  z_score: Record<string, number>;
+  avg_30d: Record<string, number>;
+  avg_90d: Record<string, number>;
+  deviation_from_avg: Record<string, number>; // bps
+}
+
+export interface ProAlert {
+  alert_id: string;
+  alert_type: 'ABNORMAL_SPREAD' | 'LARGE_BLOCK' | 'CURVE_INVERSION' | 'VOLATILITY_SPIKE';
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  tenor: string | null;
+  current_value: number;
+  threshold: number;
+  timestamp: string;
+  message: string;
+}
+
+export interface ProTraderMetrics {
+  time_window: number;
+  tenor_metrics: Record<string, TenorDetail>;
+  spread_metrics: SpreadMetrics;
+  flow_metrics: ProFlowMetrics;
+  volatility_metrics: VolatilityMetrics;
+  execution_metrics: ExecutionMetrics;
+  price_impact_metrics: PriceImpactMetrics;
+  forward_curve_metrics: ForwardCurveMetrics;
+  historical_context: HistoricalContext;
+  alerts: ProAlert[];
+}
+
+export interface ProTraderDelta {
+  // Comparaison entre deux périodes (ex: 10min vs 1h)
+  tenor_deltas: Record<string, {
+    mid_change: number; // bps
+    volume_change: number; // %
+    spread_change: number; // bps
+  }>;
+  spread_deltas: Record<string, number>; // bps
+  flow_delta: {
+    direction_change: boolean | string;
+    intensity_change: number;
+  };
 }
 
 export interface WebSocketMessage {

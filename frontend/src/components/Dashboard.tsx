@@ -5,6 +5,7 @@ import CurveAnalysis from './dashboard/CurveAnalysis';
 import FlowMicrostructure from './dashboard/FlowMicrostructure';
 import RiskDashboard from './dashboard/RiskDashboard';
 import RealTimeMetrics from './dashboard/RealTimeMetrics';
+import ProTrader from './dashboard/ProTrader';
 
 interface DashboardProps {
   analytics: Analytics | null;
@@ -12,7 +13,7 @@ interface DashboardProps {
   strategies: Strategy[];
 }
 
-type TabType = 'overview' | 'curve' | 'flow' | 'risk' | 'realtime';
+type TabType = 'overview' | 'curve' | 'flow' | 'risk' | 'realtime' | 'protrader';
 
 interface TabButtonProps {
   active: boolean;
@@ -66,6 +67,9 @@ export default function Dashboard({ analytics, trades, strategies }: DashboardPr
           <TabButton active={activeTab === 'realtime'} onClick={() => setActiveTab('realtime')}>
             Real-time Metrics
           </TabButton>
+          <TabButton active={activeTab === 'protrader'} onClick={() => setActiveTab('protrader')}>
+            Pro Trader
+          </TabButton>
         </nav>
       </div>
 
@@ -76,6 +80,12 @@ export default function Dashboard({ analytics, trades, strategies }: DashboardPr
         {activeTab === 'flow' && <FlowMicrostructure flowMetrics={analytics.flow_metrics} currencyMetrics={analytics.currency_metrics} />}
         {activeTab === 'risk' && <RiskDashboard riskMetrics={analytics.risk_metrics} />}
         {activeTab === 'realtime' && <RealTimeMetrics realtimeMetrics={analytics.realtime_metrics} />}
+        {activeTab === 'protrader' && (
+          <ProTrader 
+            proTraderMetrics={analytics.pro_trader_metrics}
+            proTraderDeltas={analytics.pro_trader_deltas}
+          />
+        )}
       </div>
     </div>
   );

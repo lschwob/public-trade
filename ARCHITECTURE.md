@@ -242,3 +242,5 @@ Panneau d'alertes:
 - Queue-based Excel writing
 - Buffer limité pour mémoire
 
+
+

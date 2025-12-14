@@ -100,3 +100,5 @@ function defaultColorScale(value: number, max: number): string {
   return '#1e40af'; // darker blue
 }
 
+
+
