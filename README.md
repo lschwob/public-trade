@@ -127,6 +127,7 @@ DTCC API → Poller → Normalize → Process Trades
 
 ### Installation avec Docker (Recommandé)
 
+**Mode Bridge (par défaut):**
 ```bash
 # Cloner le repository
 git clone <repository-url>
@@ -140,6 +141,19 @@ docker-compose up --build
 # - Frontend: http://localhost:5173
 # - API Docs: http://localhost:8000/docs
 ```
+
+**Mode Host Network (pour accès direct depuis l'hôte):**
+```bash
+# Utiliser le fichier docker-compose avec mode host
+docker-compose -f docker-compose.host.yml up --build
+
+# Les services seront directement accessibles sur l'hôte:
+# - Backend API: http://localhost:8000
+# - Frontend: http://localhost:5173
+# - API Docs: http://localhost:8000/docs
+```
+
+**Note:** Le backend écoute sur `0.0.0.0:8000` pour être accessible depuis l'hôte dans les deux modes.
 
 ### Installation locale (Développement)
 

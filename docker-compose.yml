@@ -6,8 +6,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: sdr-trades-backend
+    # Bind to all interfaces (0.0.0.0) to allow access from host
     ports:
-      - "8000:8000"
+      - "0.0.0.0:8000:8000"
     volumes:
       - ./excel_output:/app/excel_output
     environment:
@@ -15,20 +16,28 @@ services:
     restart: unless-stopped
     networks:
       - sdr-network
+    # Allow access from host network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: sdr-trades-frontend
+    # Bind to all interfaces (0.0.0.0) to allow access from host
     ports:
-      - "5173:5173"
+      - "0.0.0.0:5173:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - VITE_WS_URL=ws://localhost:8000/ws
-      - VITE_API_URL=http://localhost:8000
+      # Use backend service name for internal Docker communication
+      # Frontend will detect hostname and use appropriate URL
+      - VITE_WS_URL=ws://backend:8000/ws
+      - VITE_API_URL=http://backend:8000
+      - VITE_WS_URL_HOST=ws://localhost:8000/ws
+      - VITE_API_URL_HOST=http://localhost:8000
     restart: unless-stopped
     networks:
       - sdr-network
@@ -38,4 +47,8 @@ services:
 networks:
   sdr-network:
     driver: bridge
+
+# Alternative: To use host network mode instead, use:
+# docker-compose -f docker-compose.host.yml up
+# This will make services directly accessible on the host network
 

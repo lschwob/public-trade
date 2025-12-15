@@ -3,13 +3,28 @@ import { WebSocketMessage, Trade, Strategy, Alert, Analytics } from '../types/tr
 
 // Use environment variable or construct from current host
 const getWsUrl = () => {
+  // Check for host-specific URL first (for browser access)
+  const hostUrl = import.meta.env.VITE_WS_URL_HOST;
+  if (hostUrl && typeof window !== 'undefined') {
+    // Use host URL when running in browser
+    return hostUrl;
+  }
+  
+  // Check for Docker internal URL
   const envUrl = import.meta.env.VITE_WS_URL;
   if (envUrl) return envUrl;
+  
   // For browser, use window location to determine WebSocket URL
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.hostname;
-  const port = host === 'localhost' ? ':8000' : '';
-  return `${protocol}//${host}${port}/ws`;
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.hostname;
+    // Use port 8000 if on localhost, otherwise use same port as frontend
+    const port = host === 'localhost' || host === '127.0.0.1' ? ':8000' : '';
+    return `${protocol}//${host}${port}/ws`;
+  }
+  
+  // Fallback for SSR or other environments
+  return 'ws://localhost:8000/ws';
 };
 
 const WS_URL = getWsUrl();
