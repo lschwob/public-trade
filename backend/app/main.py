@@ -2,9 +2,9 @@
 FastAPI application with WebSocket support for real-time IRS monitoring.
 
 This is the main application module that orchestrates:
-- DTCC API polling
+- Internal API polling (with pre-classified strategies)
 - Trade processing and normalization
-- Strategy detection
+- Strategy processing (from internal API)
 - Alert generation
 - Excel file writing
 - WebSocket broadcasting
@@ -12,7 +12,7 @@ This is the main application module that orchestrates:
 
 The application maintains a global state with:
 - Trade buffer (in-memory, max 1000 trades)
-- Strategy detector
+- Tracked strategies (from internal API)
 - Alert engine
 - Excel writer
 - Analytics engine
@@ -32,7 +32,6 @@ import json
 from app.config import MAX_TRADES_IN_BUFFER, POLL_INTERVAL
 from app.poller import Poller
 from app.excel_writer import ExcelWriter
-from app.strategy_detector import StrategyDetector
 from app.alert_engine import AlertEngine
 from app.trade_grouper import TradeGrouper
 from app.analytics_engine import AnalyticsEngine
@@ -45,7 +44,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # FastAPI application instance
-app = FastAPI(title="IRS Monitoring API", description="Real-time Interest Rate Swaps monitoring via DTCC API")
+app = FastAPI(title="IRS Monitoring API", description="Real-time Interest Rate Swaps monitoring via Internal API")
 
 # ============================================================================
 # CORS Configuration
@@ -66,9 +65,6 @@ app.add_middleware(
 # Excel writer for continuous daily file logging
 excel_writer = ExcelWriter()
 
-# Strategy detector for multi-leg trade identification
-strategy_detector = StrategyDetector()
-
 # Alert engine for EUR-based threshold alerts
 alert_engine = AlertEngine()
 
@@ -88,6 +84,10 @@ seen_trade_ids: Set[str] = set()
 # Map package_transaction_price to list of legs for package trades
 # Used to attach package legs to parent trades for frontend display
 package_legs: dict[str, List[Trade]] = {}
+
+# Track strategies from internal API (keyed by strategy_id)
+# Strategies are already classified by the internal API
+tracked_strategies: dict[str, Strategy] = {}
 
 # WebSocket connections for real-time updates
 active_connections: Set[WebSocket] = set()
@@ -159,29 +159,33 @@ async def handle_alert(alert: Alert):
     await broadcast_message("alert", alert.dict())
 
 
-async def process_trades(trades: List[Trade]):
+async def process_trades(trades: List[Trade], strategies: List[Strategy] = None):
     """
-    Process new trades: write to Excel, detect strategies, generate alerts.
+    Process new trades and strategies: write to Excel, generate alerts.
     
     This is the main trade processing function called by the Poller whenever
-    new trades are fetched from the DTCC API. It:
+    new trades and strategies are fetched from the internal API. It:
     1. Filters out duplicate trades (using dissemination_identifier)
     2. Adds trades to the memory buffer
     3. Writes trades to Excel (via ExcelWriter)
-    4. Detects strategies (via StrategyDetector)
+    4. Processes pre-classified strategies from internal API
     5. Generates alerts (via AlertEngine, only for new trades)
     6. Groups related trades (via TradeGrouper)
     7. Updates daily statistics
     8. Broadcasts updates via WebSocket
     
     Args:
-        trades: List of new Trade objects from DTCC API
+        trades: List of new Trade objects from internal API
+        strategies: List of pre-classified Strategy objects from internal API
         
     Note:
         Only truly new trades (not in seen_trade_ids) trigger alerts to
         prevent duplicate notifications.
     """
-    global trade_buffer, daily_stats, seen_trade_ids, package_legs
+    global trade_buffer, daily_stats, seen_trade_ids, package_legs, tracked_strategies
+    
+    if strategies is None:
+        strategies = []
     
     if not trades:
         return
@@ -259,11 +263,9 @@ async def process_trades(trades: List[Trade]):
     all_trades_for_grouping = new_trades + [t for t in trade_buffer[-50:] if t not in new_trades]
     trade_grouper.group_trades(all_trades_for_grouping)
     
-    # Detect strategies
-    strategies = strategy_detector.detect_strategies(new_trades)
-    
+    # Process pre-classified strategies from internal API
     # Track existing strategy IDs before processing new ones
-    existing_strategy_ids_before = {s.strategy_id for s in strategy_detector.get_all_strategies()}
+    existing_strategy_ids_before = set(tracked_strategies.keys())
     
     for strategy in strategies:
         # Assign strategy IDs to trades
@@ -273,6 +275,9 @@ async def process_trades(trades: List[Trade]):
                     trade.strategy_id = strategy.strategy_id
                     break
         
+        # Store strategy
+        tracked_strategies[strategy.strategy_id] = strategy
+        
         # Write strategy to Excel
         excel_writer.update_strategy(strategy)
         
@@ -281,7 +286,7 @@ async def process_trades(trades: List[Trade]):
         await alert_engine.process_strategy(strategy, is_new_strategy=is_new_strategy)
         
         # Update stats
-        daily_stats["strategies_count"] = len(strategy_detector.get_all_strategies())
+        daily_stats["strategies_count"] = len(tracked_strategies)
         daily_stats["strategy_types"][strategy.strategy_type] = \
             daily_stats["strategy_types"].get(strategy.strategy_type, 0) + 1
         
@@ -397,7 +402,7 @@ async def update_analytics():
         realtime_metrics_dict = analytics_engine.calculate_realtime_metrics(trade_buffer, recent_alerts)
         currency_metrics_dict = analytics_engine.calculate_currency_metrics(trade_buffer)
         strategy_metrics_dict = analytics_engine.calculate_strategy_metrics(
-            strategy_detector.get_all_strategies(),
+            list(tracked_strategies.values()),
             trade_buffer
         )
         
@@ -534,7 +539,11 @@ async def startup():
     logger.info(f"Marked {len(trade_buffer)} existing trades as already alerted")
     
     # Start poller in background
-    poller = Poller(process_trades)
+    # Create wrapper function to match Poller callback signature
+    async def process_data(trades: List[Trade], strategies: List[Strategy]):
+        await process_trades(trades, strategies)
+    
+    poller = Poller(process_data)
     poller.running = True
     asyncio.create_task(poller._poll_with_retry())
     

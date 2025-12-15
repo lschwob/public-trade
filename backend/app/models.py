@@ -3,10 +3,12 @@ Pydantic models for trade data structures.
 
 This module defines all data models used throughout the application using Pydantic
 for validation and serialization. Models include:
-- Trade: Individual trade data from DTCC API
-- Strategy: Multi-leg strategy detection results
+- Trade: Individual trade data from internal API
+- Strategy: Multi-leg strategy classification results
 - Alert: Alert notifications
 - Analytics: Various analytics metrics and aggregations
+- InternalAPIResponse: Response model from internal API
+- Leg: Leg model representing a single leg in a strategy
 
 All models use Pydantic BaseModel for automatic validation and JSON serialization.
 """
@@ -16,11 +18,57 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
+class Leg(BaseModel):
+    """
+    Leg model representing a single leg in a strategy from the internal API.
+    
+    This model represents all information about a leg in a strategy trade.
+    """
+    # All leg information fields - flexible structure to accommodate various leg data
+    # Common fields that might be present:
+    dissemination_identifier: Optional[str] = None
+    notional_amount: Optional[float] = None
+    notional_currency: Optional[str] = None
+    fixed_rate: Optional[float] = None
+    spread: Optional[float] = None
+    effective_date: Optional[str] = None
+    expiration_date: Optional[str] = None
+    tenor: Optional[str] = None
+    underlying_name: Optional[str] = None
+    execution_timestamp: Optional[str] = None
+    
+    # Allow additional fields
+    class Config:
+        extra = "allow"
+
+
+class InternalAPIResponse(BaseModel):
+    """
+    Response model from the internal API that classifies strategies.
+    
+    This model represents the structure returned by the internal API:
+    - id: Strategy/trade identifier
+    - price: Price of the strategy
+    - ironprice: Iron price of the strategy
+    - date: Date of the trade/strategy
+    - legs: List of legs with all their information
+    """
+    id: str
+    price: Optional[float] = None
+    ironprice: Optional[float] = None
+    date: str  # ISO date string
+    legs: List[Leg]
+    
+    # Allow additional fields that might be present
+    class Config:
+        extra = "allow"
+
+
 class Trade(BaseModel):
     """
     Normalized trade model representing an Interest Rate Swap trade.
     
-    This model represents a single trade from the DTCC API, normalized and enriched
+    This model represents a single trade from the internal API, normalized and enriched
     with computed fields like notional in EUR, tenor, and forward trade detection.
     
     Attributes:
@@ -106,9 +154,8 @@ class Strategy(BaseModel):
     """
     Strategy model for multi-leg Interest Rate Swap strategies.
     
-    Represents a detected multi-leg strategy such as spreads, butterflies, or curve trades.
-    Strategies are detected by grouping trades with the same package_transaction_price
-    or by analyzing trades with the same underlying within a time window.
+    Represents a classified multi-leg strategy such as spreads, butterflies, or curve trades.
+    Strategies are pre-classified by the internal API and provided with the trade data.
     
     Attributes:
         strategy_id: Unique identifier for the strategy
@@ -118,7 +165,7 @@ class Strategy(BaseModel):
         total_notional_eur: Sum of all leg notionals in EUR
         execution_start: Timestamp of the first leg execution
         execution_end: Timestamp of the last leg execution
-        package_transaction_price: Package price if detected from DTCC package indicator
+        package_transaction_price: Package price if applicable
         tenor_pair: Formatted tenor pair (e.g., "10Y/30Y" for a spread)
         tenor_legs: List of individual tenors in the strategy (e.g., ["10Y", "30Y"])
     """

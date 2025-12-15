@@ -8,7 +8,7 @@
 /**
  * Trade interface representing an Interest Rate Swap trade.
  * 
- * This interface represents a normalized trade from the DTCC API with
+ * This interface represents a normalized trade from the internal API with
  * all computed fields like notional in EUR, tenor, and forward detection.
  */
 export interface Trade {
