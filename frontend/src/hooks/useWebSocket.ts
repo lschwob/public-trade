@@ -49,6 +49,9 @@ export function useWebSocket() {
               if (message.data.trades) {
                 setTrades(message.data.trades);
               }
+              if (message.data.strategies) {
+                setStrategies(message.data.strategies);
+              }
               if (message.data.analytics) {
                 setAnalytics(message.data.analytics);
               }
