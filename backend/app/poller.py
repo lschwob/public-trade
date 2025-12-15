@@ -1,25 +1,24 @@
 """
-DTCC API polling module.
+Internal API polling module.
 
-This module handles polling the DTCC (Depository Trust & Clearing Corporation) API
-for Interest Rate Swap trade data. It includes:
+This module handles polling the internal API for Interest Rate Swap trade data
+with pre-classified strategies. It includes:
 - API polling with exponential backoff retry logic
-- Trade data normalization and parsing
-- Tenor calculation from dates
-- Forward trade detection
+- Trade data normalization and parsing from internal API format
+- Conversion from internal API response to Trade and Strategy models
 
-The module polls the DTCC API at regular intervals and normalizes raw trade data
-into the application's Trade model format.
+The module polls the internal API at regular intervals and normalizes raw trade data
+into the application's Trade and Strategy model formats.
 """
 
 import asyncio
 import logging
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from dateutil import parser
 import httpx
-from app.config import DTCC_API_URL, DTCC_HEADERS, POLL_INTERVAL
-from app.models import Trade
+from app.config import INTERNAL_API_URL, INTERNAL_API_HEADERS, INTERNAL_API_TOKEN, POLL_INTERVAL
+from app.models import Trade, Strategy, InternalAPIResponse, Leg
 
 logger = logging.getLogger(__name__)
 
@@ -153,39 +152,39 @@ def calculate_tenor(effective_date: Optional[str], expiration_date: Optional[str
         return None
 
 
-def normalize_trade(raw_trade: Dict[str, Any]) -> Optional[Trade]:
+def normalize_leg_to_trade(leg: Leg, strategy_id: Optional[str] = None, date_str: Optional[str] = None) -> Optional[Trade]:
     """
-    Normalize raw trade data from DTCC API to Trade model.
+    Convert a Leg from internal API to a Trade model.
     
-    This function converts raw JSON trade data from the DTCC API into a normalized
+    This function converts a Leg object from the internal API response into a normalized
     Trade object. It handles:
     - Date parsing and validation
-    - Notional parsing (handles commas, spaces, trailing '+')
+    - Notional parsing
     - Rate parsing
-    - Tenor calculation
-    - Forward trade detection (if effective date > 2 days in future)
+    - Tenor extraction or calculation
+    - Forward trade detection
     
     Args:
-        raw_trade: Raw trade dictionary from DTCC API
+        leg: Leg object from internal API
+        strategy_id: Optional strategy ID if this leg belongs to a strategy
+        date_str: Date string from the parent response
         
     Returns:
         Normalized Trade object, or None if normalization fails
-        
-    Raises:
-        Logs errors but doesn't raise exceptions (returns None on failure)
     """
     try:
-        # Detect forward trades
-        effective_date_str = raw_trade.get("effectiveDate")
+        # Parse dates
+        effective_date_str = leg.effective_date
+        expiration_date_str = leg.expiration_date
+        execution_timestamp_str = leg.execution_timestamp or date_str
+        
         effective_date_dt = None
         is_forward = False
         
         if effective_date_str:
             try:
                 effective_date_dt = parser.isoparse(effective_date_str)
-                # If effective date is more than 2 business days in the future, it's a forward
                 now = datetime.utcnow()
-                # Remove timezone for comparison
                 if effective_date_dt.tzinfo:
                     effective_date_dt_naive = effective_date_dt.replace(tzinfo=None)
                 else:
@@ -195,51 +194,145 @@ def normalize_trade(raw_trade: Dict[str, Any]) -> Optional[Trade]:
             except Exception as e:
                 logger.warning(f"Error parsing effectiveDate: {e}")
         
+        execution_timestamp = parse_date(execution_timestamp_str) or datetime.utcnow()
+        
+        # Extract notional - try different possible field names
+        notional = leg.notional_amount or 0.0
+        notional_currency = leg.notional_currency or "EUR"
+        
+        # Extract rates
+        fixed_rate = leg.fixed_rate
+        spread = leg.spread
+        
+        # Extract identifier
+        # Generate a unique ID if not provided
+        if leg.dissemination_identifier:
+            dissemination_id = leg.dissemination_identifier
+        else:
+            # Create a unique identifier based on leg data
+            leg_dict = leg.dict(exclude_none=True)
+            leg_hash = hash(str(sorted(leg_dict.items())))
+            dissemination_id = f"LEG_{abs(leg_hash)}"
+        
         return Trade(
-            dissemination_identifier=raw_trade.get("disseminationIdentifier", ""),
-            original_dissemination_identifier=raw_trade.get("originalDisseminationIdentifier"),
-            action_type=raw_trade.get("actionType", ""),
-            event_type=raw_trade.get("eventType", ""),
-            event_timestamp=parse_date(raw_trade.get("eventTimestamp", "")) or datetime.utcnow(),
-            execution_timestamp=parse_date(raw_trade.get("executionTimestamp", "")) or datetime.utcnow(),
+            dissemination_identifier=dissemination_id,
+            original_dissemination_identifier=None,
+            action_type="NEWT",  # Default to NEWT
+            event_type="TRADE",
+            event_timestamp=execution_timestamp,
+            execution_timestamp=execution_timestamp,
             effective_date=effective_date_str,
             effective_date_dt=effective_date_dt,
-            expiration_date=raw_trade.get("expirationDate"),
-            notional_amount_leg1=parse_notional(raw_trade.get("notionalAmountLeg1") or ""),
-            notional_amount_leg2=parse_notional(raw_trade.get("notionalAmountLeg2") or ""),
-            notional_currency_leg1=raw_trade.get("notionalCurrencyLeg1", ""),
-            notional_currency_leg2=raw_trade.get("notionalCurrencyLeg2", ""),
-            fixed_rate_leg1=parse_rate(raw_trade.get("fixedRateLeg1")),
-            fixed_rate_leg2=parse_rate(raw_trade.get("fixedRateLeg2")),
-            spread_leg1=parse_rate(raw_trade.get("spreadLeg1")),
-            spread_leg2=parse_rate(raw_trade.get("spreadLeg2")),
-            unique_product_identifier=raw_trade.get("uniqueProductIdentifier", ""),
-            unique_product_identifier_short_name=raw_trade.get("uniqueProductIdentifierShortName"),
-            unique_product_identifier_underlier_name=raw_trade.get("uniqueProductIdentifierUnderlierName"),
-            platform_identifier=raw_trade.get("platformIdentifier"),
-            package_indicator=raw_trade.get("packageIndicator", "FALSE").upper() == "TRUE",
-            package_transaction_price=raw_trade.get("packageTransactionPrice"),
-            tenor=calculate_tenor(
-                raw_trade.get("effectiveDate"),
-                raw_trade.get("expirationDate")
-            ),
+            expiration_date=expiration_date_str,
+            notional_amount_leg1=notional,
+            notional_amount_leg2=notional,  # Use same for both legs if not specified
+            notional_currency_leg1=notional_currency,
+            notional_currency_leg2=notional_currency,
+            fixed_rate_leg1=fixed_rate,
+            fixed_rate_leg2=None,
+            spread_leg1=spread,
+            spread_leg2=None,
+            unique_product_identifier=leg.underlying_name or "UNKNOWN",
+            unique_product_identifier_short_name=None,
+            unique_product_identifier_underlier_name=leg.underlying_name,
+            platform_identifier=None,
+            package_indicator=False,  # Will be set based on strategy context
+            package_transaction_price=None,
+            strategy_id=strategy_id,
+            notional_eur=notional if notional_currency == "EUR" else None,
+            tenor=leg.tenor or calculate_tenor(effective_date_str, expiration_date_str),
             is_forward=is_forward
         )
     except Exception as e:
-        logger.error(f"Error normalizing trade: {e}", exc_info=True)
+        logger.error(f"Error normalizing leg to trade: {e}", exc_info=True)
         return None
 
 
-async def poll_dtcc_api() -> List[Trade]:
+def convert_internal_api_response(response_data: InternalAPIResponse) -> Tuple[List[Trade], Optional[Strategy]]:
     """
-    Poll DTCC API and return list of normalized trades.
+    Convert internal API response to Trade and Strategy models.
     
-    Makes an HTTP GET request to the DTCC API endpoint, parses the JSON response,
-    and normalizes all trades in the response. Handles HTTP errors gracefully
-    by returning an empty list.
+    This function converts an InternalAPIResponse object into:
+    - A list of Trade objects (one per leg)
+    - An optional Strategy object if there are multiple legs
+    
+    Args:
+        response_data: InternalAPIResponse object from internal API
+        
+    Returns:
+        Tuple of (list of Trade objects, optional Strategy object)
+    """
+    trades = []
+    strategy = None
+    
+    try:
+        # Parse the date
+        date_dt = parse_date(response_data.date) or datetime.utcnow()
+        
+        # Convert each leg to a Trade
+        leg_trades = []
+        for leg in response_data.legs:
+            trade = normalize_leg_to_trade(leg, strategy_id=response_data.id, date_str=response_data.date)
+            if trade:
+                leg_trades.append(trade)
+                trades.append(trade)
+        
+        # Create Strategy if there are multiple legs
+        if len(leg_trades) > 1:
+            # Extract underlying name from first leg
+            underlying_name = leg_trades[0].unique_product_identifier_underlier_name or "Unknown"
+            
+            # Extract tenors
+            tenors = [t.tenor for t in leg_trades if t.tenor]
+            unique_tenors = sorted(list(set(tenors))) if tenors else []
+            tenor_pair = "/".join(unique_tenors) if unique_tenors else None
+            
+            # Classify strategy type
+            num_legs = len(leg_trades)
+            if num_legs == 2:
+                strategy_type = "Spread"
+            elif num_legs == 3:
+                strategy_type = "Butterfly"
+            elif num_legs >= 4:
+                strategy_type = "Curve"
+            else:
+                strategy_type = "Package"
+            
+            if tenor_pair:
+                strategy_type = f"{tenor_pair} {strategy_type}"
+            
+            # Calculate total notional
+            total_notional = sum(t.notional_eur or t.notional_amount_leg1 for t in leg_trades)
+            
+            strategy = Strategy(
+                strategy_id=response_data.id,
+                strategy_type=strategy_type,
+                underlying_name=underlying_name,
+                legs=[t.dissemination_identifier for t in leg_trades],
+                total_notional_eur=total_notional,
+                execution_start=min(t.execution_timestamp for t in leg_trades),
+                execution_end=max(t.execution_timestamp for t in leg_trades),
+                package_transaction_price=None,
+                tenor_pair=tenor_pair,
+                tenor_legs=unique_tenors if unique_tenors else None
+            )
+        
+    except Exception as e:
+        logger.error(f"Error converting internal API response: {e}", exc_info=True)
+    
+    return trades, strategy
+
+
+async def poll_internal_api() -> Tuple[List[Trade], List[Strategy]]:
+    """
+    Poll internal API and return list of normalized trades and strategies.
+    
+    Makes an HTTP GET request to the internal API endpoint, parses the JSON response,
+    and converts all responses to Trade and Strategy objects. Handles HTTP errors gracefully
+    by returning empty lists.
     
     Returns:
-        List of normalized Trade objects, empty list on error or if no trades found
+        Tuple of (list of normalized Trade objects, list of Strategy objects)
         
     Note:
         This function is async and should be called with await. It uses httpx
@@ -247,47 +340,66 @@ async def poll_dtcc_api() -> List[Trade]:
     """
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            response = await client.get(DTCC_API_URL, headers=DTCC_HEADERS)
+            # Prepare headers with authentication if token is provided
+            headers = INTERNAL_API_HEADERS.copy()
+            if INTERNAL_API_TOKEN:
+                headers["Authorization"] = f"Bearer {INTERNAL_API_TOKEN}"
+            
+            response = await client.get(INTERNAL_API_URL, headers=headers)
             response.raise_for_status()
             
             data = response.json()
-            trade_list = data.get("tradeList", [])
             
-            trades = []
-            for raw_trade in trade_list:
-                trade = normalize_trade(raw_trade)
-                if trade:
-                    trades.append(trade)
+            # Handle both single response and list of responses
+            if isinstance(data, list):
+                responses = data
+            else:
+                responses = [data]
             
-            logger.info(f"Polled {len(trades)} trades from DTCC API")
-            return trades
+            all_trades = []
+            all_strategies = []
+            
+            for response_item in responses:
+                try:
+                    # Parse response using InternalAPIResponse model
+                    api_response = InternalAPIResponse(**response_item)
+                    trades, strategy = convert_internal_api_response(api_response)
+                    all_trades.extend(trades)
+                    if strategy:
+                        all_strategies.append(strategy)
+                except Exception as e:
+                    logger.error(f"Error processing API response item: {e}", exc_info=True)
+                    continue
+            
+            logger.info(f"Polled {len(all_trades)} trades and {len(all_strategies)} strategies from internal API")
+            return all_trades, all_strategies
             
         except httpx.HTTPError as e:
-            logger.error(f"HTTP error polling DTCC API: {e}")
-            return []
+            logger.error(f"HTTP error polling internal API: {e}")
+            return [], []
         except Exception as e:
-            logger.error(f"Unexpected error polling DTCC API: {e}", exc_info=True)
-            return []
+            logger.error(f"Unexpected error polling internal API: {e}", exc_info=True)
+            return [], []
 
 
 class Poller:
     """
-    DTCC API poller with exponential backoff retry logic.
+    Internal API poller with exponential backoff retry logic.
     
-    This class manages continuous polling of the DTCC API at regular intervals.
+    This class manages continuous polling of the internal API at regular intervals.
     It implements exponential backoff retry logic to handle temporary API failures
     gracefully, automatically increasing the delay between retries up to a maximum.
     
     Attributes:
-        callback: Async function called with List[Trade] when new trades are polled
+        callback: Async function called with (List[Trade], List[Strategy]) when new data is polled
         running: Boolean flag to control polling loop
         retry_delay: Current retry delay in seconds (starts at 1, doubles on error)
         max_retry_delay: Maximum retry delay (60 seconds)
     
     Example:
-        >>> async def process_trades(trades: List[Trade]):
-        ...     print(f"Received {len(trades)} trades")
-        >>> poller = Poller(process_trades)
+        >>> async def process_data(trades: List[Trade], strategies: List[Strategy]):
+        ...     print(f"Received {len(trades)} trades and {len(strategies)} strategies")
+        >>> poller = Poller(process_data)
         >>> poller.running = True
         >>> await poller._poll_with_retry()  # Runs continuously
     """
@@ -297,8 +409,8 @@ class Poller:
         Initialize poller with callback function.
         
         Args:
-            callback: Async function that receives List[Trade] as argument.
-                     This function is called whenever new trades are polled from the API.
+            callback: Async function that receives (List[Trade], List[Strategy]) as arguments.
+                     This function is called whenever new data is polled from the API.
         """
         self.callback = callback
         self.running = False
@@ -309,7 +421,7 @@ class Poller:
         """
         Poll with exponential backoff on errors.
         
-        Continuously polls the DTCC API at POLL_INTERVAL seconds. On success,
+        Continuously polls the internal API at POLL_INTERVAL seconds. On success,
         resets retry delay to 1 second. On error, doubles the retry delay
         (up to max_retry_delay) before retrying.
         
@@ -322,9 +434,9 @@ class Poller:
         """
         while self.running:
             try:
-                trades = await poll_dtcc_api()
-                if trades:
-                    await self.callback(trades)
+                trades, strategies = await poll_internal_api()
+                if trades or strategies:
+                    await self.callback(trades, strategies)
                     self.retry_delay = 1  # Reset on success
                 await asyncio.sleep(POLL_INTERVAL)
             except Exception as e:
@@ -340,5 +452,5 @@ class Poller:
         loop to exit on the next iteration.
         """
         self.running = False
-        logger.info("DTCC poller stopped")
+        logger.info("Internal API poller stopped")
 

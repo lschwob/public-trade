@@ -14,25 +14,26 @@ from pathlib import Path
 # Polling Configuration
 # ============================================================================
 
-# Interval between DTCC API polls (in seconds)
+# Interval between internal API polls (in seconds)
 # Lower values provide more real-time data but increase API load
 POLL_INTERVAL = 5  # seconds
 
 # ============================================================================
-# DTCC API Configuration
+# Internal API Configuration
 # ============================================================================
 
-# DTCC Public Data API endpoint for Interest Rate Swaps
-# This endpoint provides real-time trade data from the Depository Trust & Clearing Corporation
-DTCC_API_URL = "https://pddata.dtcc.com/ppd/api/ticker/CFTC/RATES"
+# Internal API endpoint for Interest Rate Swaps with strategy classification
+# This endpoint provides real-time trade data with pre-classified strategies
+INTERNAL_API_URL = os.getenv("INTERNAL_API_URL", "http://localhost:8000/api/trades")
 
-# HTTP headers required for DTCC API requests
-# These headers mimic a browser request to access the public data
-DTCC_HEADERS = {
+# HTTP headers required for internal API requests
+INTERNAL_API_HEADERS = {
     "Accept": "application/json",
-    "Referer": "https://pddata.dtcc.com/",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    "Content-Type": "application/json"
 }
+
+# API authentication token (if required)
+INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "")
 
 # ============================================================================
 # Alert Configuration
