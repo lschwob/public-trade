@@ -18,7 +18,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from dateutil import parser
 import httpx
 from app.config import INTERNAL_API_URL, INTERNAL_API_HEADERS, INTERNAL_API_TOKEN, POLL_INTERVAL
-from app.models import Trade, Strategy, InternalAPIResponse, Leg
+from app.models import Trade, Strategy, InternalAPIResponse, Leg, StrategyAPIResponse, LegAPI
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +152,115 @@ def calculate_tenor(effective_date: Optional[str], expiration_date: Optional[str
         return None
 
 
+def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime: Optional[str] = None) -> Optional[Trade]:
+    """
+    Convert a LegAPI from new API to a Trade model.
+    
+    This function converts a LegAPI object from the new API response into a normalized
+    Trade object. It handles:
+    - Date parsing and validation
+    - Notional parsing
+    - Rate parsing
+    - Tenor extraction
+    - Forward trade detection
+    
+    Args:
+        leg: LegAPI object from new API
+        strategy_id: Strategy ID this leg belongs to
+        execution_datetime: Execution datetime from parent strategy
+        
+    Returns:
+        Normalized Trade object, or None if normalization fails
+    """
+    try:
+        # Parse dates
+        effective_date_str = leg.Effectivedate
+        expiration_date_str = leg.Expirationdate
+        execution_timestamp_str = leg.Executiontime or leg.Eventtime or execution_datetime
+        
+        effective_date_dt = None
+        is_forward = False
+        
+        if effective_date_str:
+            try:
+                effective_date_dt = parser.isoparse(effective_date_str)
+                now = datetime.utcnow()
+                if effective_date_dt.tzinfo:
+                    effective_date_dt_naive = effective_date_dt.replace(tzinfo=None)
+                else:
+                    effective_date_dt_naive = effective_date_dt
+                days_diff = (effective_date_dt_naive - now).days
+                is_forward = days_diff > 2
+            except Exception as e:
+                logger.warning(f"Error parsing effectiveDate: {e}")
+        
+        execution_timestamp = parse_date(execution_timestamp_str) or datetime.utcnow()
+        
+        # Extract notional - use leg1, fallback to leg2
+        notional_leg1 = leg.Notionalamountleg1 or 0.0
+        notional_leg2 = leg.Notionalamountleg2 or notional_leg1
+        
+        # Extract rates
+        fixed_rate_leg1 = leg.Fixedrateleg1
+        fixed_rate_leg2 = leg.Fixedrateleg2
+        spread_leg1 = leg.Spreadleg1
+        spread_leg2 = leg.Spreadleg2
+        
+        # Extract identifier
+        dissemination_id = leg.id or leg.Upifisn or leg.Upi
+        if not dissemination_id:
+            # Create a unique identifier based on leg data
+            leg_dict = leg.dict(exclude_none=True)
+            leg_hash = hash(str(sorted(leg_dict.items())))
+            dissemination_id = f"LEG_{abs(leg_hash)}"
+        
+        # Extract underlying from Rateunderlier or Upi
+        underlying_name = leg.Rateunderlier or leg.Upi or "UNKNOWN"
+        
+        # Extract tenor
+        tenor = leg.Tenorleg1 or leg.Tenorleg2
+        if not tenor and effective_date_str and expiration_date_str:
+            tenor = calculate_tenor(effective_date_str, expiration_date_str)
+        
+        # Determine currency (default to EUR if not specified)
+        # In the new API, we might need to infer from context
+        notional_currency_leg1 = "EUR"  # Default, could be enhanced with currency detection
+        notional_currency_leg2 = "EUR"
+        
+        return Trade(
+            dissemination_identifier=dissemination_id,
+            original_dissemination_identifier=None,
+            action_type="NEWT",  # Default to NEWT
+            event_type="TRADE",
+            event_timestamp=execution_timestamp,
+            execution_timestamp=execution_timestamp,
+            effective_date=effective_date_str,
+            effective_date_dt=effective_date_dt,
+            expiration_date=expiration_date_str,
+            notional_amount_leg1=notional_leg1,
+            notional_amount_leg2=notional_leg2,
+            notional_currency_leg1=notional_currency_leg1,
+            notional_currency_leg2=notional_currency_leg2,
+            fixed_rate_leg1=fixed_rate_leg1,
+            fixed_rate_leg2=fixed_rate_leg2,
+            spread_leg1=spread_leg1,
+            spread_leg2=spread_leg2,
+            unique_product_identifier=leg.Upi or "UNKNOWN",
+            unique_product_identifier_short_name=None,
+            unique_product_identifier_underlier_name=underlying_name,
+            platform_identifier=leg.platformcode or leg.Platformname,
+            package_indicator=leg.Packageindicator or False,
+            package_transaction_price=leg.Packagetransactionprice,
+            strategy_id=strategy_id,
+            notional_eur=notional_leg1 if notional_currency_leg1 == "EUR" else None,  # Simplified
+            tenor=tenor,
+            is_forward=is_forward
+        )
+    except Exception as e:
+        logger.error(f"Error normalizing leg API to trade: {e}", exc_info=True)
+        return None
+
+
 def normalize_leg_to_trade(leg: Leg, strategy_id: Optional[str] = None, date_str: Optional[str] = None) -> Optional[Trade]:
     """
     Convert a Leg from internal API to a Trade model.
@@ -248,6 +357,120 @@ def normalize_leg_to_trade(leg: Leg, strategy_id: Optional[str] = None, date_str
         return None
 
 
+def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[List[Trade], Optional[Strategy]]:
+    """
+    Convert new StrategyAPIResponse to Trade and Strategy models.
+    
+    This function converts a StrategyAPIResponse object into:
+    - A list of Trade objects (one per leg)
+    - A Strategy object representing the complete strategy
+    
+    Args:
+        response_data: StrategyAPIResponse object from new API
+        
+    Returns:
+        Tuple of (list of Trade objects, Strategy object)
+    """
+    trades = []
+    strategy = None
+    
+    try:
+        # Parse execution datetime
+        execution_datetime = response_data.executiondatetime
+        
+        # Convert each leg to a Trade
+        leg_trades = []
+        for leg in response_data.legs:
+            trade = normalize_leg_api_to_trade(leg, strategy_id=response_data.id, execution_datetime=execution_datetime)
+            if trade:
+                leg_trades.append(trade)
+                trades.append(trade)
+        
+        # Create Strategy if there are legs
+        if len(leg_trades) > 0:
+            # Extract underlying name from strategy or first leg
+            underlying_name = response_data.Underlier or (leg_trades[0].unique_product_identifier_underlier_name if leg_trades else "Unknown")
+            
+            # Extract tenors from legs
+            tenors = []
+            for leg in response_data.legs:
+                if leg.Tenorleg1:
+                    tenors.append(leg.Tenorleg1)
+                if leg.Tenorleg2:
+                    tenors.append(leg.Tenorleg2)
+            
+            # Also get tenors from trades
+            trade_tenors = [t.tenor for t in leg_trades if t.tenor]
+            tenors.extend(trade_tenors)
+            
+            unique_tenors = sorted(list(set(tenors))) if tenors else []
+            tenor_pair = "/".join(unique_tenors) if unique_tenors else None
+            
+            # Use strategy Tenor if available
+            if response_data.Tenor and response_data.Tenor not in unique_tenors:
+                unique_tenors.insert(0, response_data.Tenor)
+                tenor_pair = "/".join(unique_tenors)
+            
+            # Classify strategy type based on leg count
+            num_legs = response_data.Legscount or len(leg_trades)
+            if num_legs == 1:
+                strategy_type = "Outright"
+            elif num_legs == 2:
+                strategy_type = "Spread"
+            elif num_legs == 3:
+                strategy_type = "Butterfly"
+            elif num_legs >= 4:
+                strategy_type = "Curve"
+            else:
+                strategy_type = "Package"
+            
+            if tenor_pair:
+                strategy_type = f"{tenor_pair} {strategy_type}"
+            
+            # Calculate total notional
+            total_notional = response_data.Notional or response_data.Notionaltruncated
+            if not total_notional:
+                total_notional = sum(t.notional_eur or t.notional_amount_leg1 for t in leg_trades)
+            
+            # Parse execution times
+            execution_start = min(t.execution_timestamp for t in leg_trades) if leg_trades else datetime.utcnow()
+            execution_end = max(t.execution_timestamp for t in leg_trades) if leg_trades else datetime.utcnow()
+            
+            if execution_datetime:
+                try:
+                    exec_dt = parse_date(execution_datetime)
+                    if exec_dt:
+                        execution_start = exec_dt
+                        execution_end = exec_dt
+                except:
+                    pass
+            
+            # Get package transaction price from first leg that has it
+            package_transaction_price = None
+            for leg in response_data.legs:
+                if leg.Packagetransactionprice:
+                    package_transaction_price = leg.Packagetransactionprice
+                    break
+            
+            strategy = Strategy(
+                strategy_id=response_data.id,
+                strategy_type=strategy_type,
+                underlying_name=underlying_name,
+                legs=[t.dissemination_identifier for t in leg_trades],
+                total_notional_eur=total_notional,
+                execution_start=execution_start,
+                execution_end=execution_end,
+                package_transaction_price=package_transaction_price,
+                tenor_pair=tenor_pair,
+                tenor_legs=unique_tenors if unique_tenors else None
+            )
+        
+    except Exception as e:
+        logger.error(f"Error converting strategy API response: {e}", exc_info=True)
+    
+    return trades, strategy
+
+
 def convert_internal_api_response(response_data: InternalAPIResponse) -> Tuple[List[Trade], Optional[Strategy]]:
     """
     Convert internal API response to Trade and Strategy models.
@@ -331,6 +554,10 @@ async def poll_internal_api() -> Tuple[List[Trade], List[Strategy]]:
     and converts all responses to Trade and Strategy objects. Handles HTTP errors gracefully
     by returning empty lists.
     
+    Supports both old and new API formats:
+    - Old format: InternalAPIResponse with Leg objects
+    - New format: StrategyAPIResponse with LegAPI objects (pre-classified strategies)
+    
     Returns:
         Tuple of (list of normalized Trade objects, list of Strategy objects)
         
@@ -361,12 +588,29 @@ async def poll_internal_api() -> Tuple[List[Trade], List[Strategy]]:
             
             for response_item in responses:
                 try:
-                    # Parse response using InternalAPIResponse model
-                    api_response = InternalAPIResponse(**response_item)
-                    trades, strategy = convert_internal_api_response(api_response)
-                    all_trades.extend(trades)
-                    if strategy:
-                        all_strategies.append(strategy)
+                    # Try new API format first (StrategyAPIResponse)
+                    try:
+                        api_response = StrategyAPIResponse(**response_item)
+                        trades, strategy = convert_strategy_api_response(api_response)
+                        all_trades.extend(trades)
+                        if strategy:
+                            all_strategies.append(strategy)
+                        continue
+                    except Exception:
+                        # If it fails, try old format
+                        pass
+                    
+                    # Try old API format (InternalAPIResponse)
+                    try:
+                        api_response = InternalAPIResponse(**response_item)
+                        trades, strategy = convert_internal_api_response(api_response)
+                        all_trades.extend(trades)
+                        if strategy:
+                            all_strategies.append(strategy)
+                    except Exception as e:
+                        logger.error(f"Error processing API response item (both formats failed): {e}", exc_info=True)
+                        continue
+                        
                 except Exception as e:
                     logger.error(f"Error processing API response item: {e}", exc_info=True)
                     continue

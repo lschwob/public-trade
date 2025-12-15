@@ -42,6 +42,38 @@ class Leg(BaseModel):
         extra = "allow"
 
 
+class LegAPI(BaseModel):
+    """
+    Leg model from the new API structure.
+    
+    Represents a single leg with all its details from the new API format.
+    """
+    id: Optional[str] = None
+    Upifisn: Optional[str] = None
+    Upi: Optional[str] = None
+    Rateunderlier: Optional[str] = None
+    Eventtime: Optional[str] = None
+    Executiontime: Optional[str] = None
+    Effectivedate: Optional[str] = None
+    Expirationdate: Optional[str] = None
+    Notionalamountleg1: Optional[float] = None
+    Notionalamountleg2: Optional[float] = None
+    platformcode: Optional[str] = None
+    Platformname: Optional[str] = None
+    Fixedrateleg1: Optional[float] = None
+    Fixedrateleg2: Optional[float] = None
+    Spreadleg1: Optional[float] = None
+    Spreadleg2: Optional[float] = None
+    Packageindicator: Optional[bool] = None
+    Packagetransactionprice: Optional[str] = None
+    Packagespread: Optional[float] = None
+    Tenorleg1: Optional[str] = None
+    Tenorleg2: Optional[str] = None
+    
+    class Config:
+        extra = "allow"
+
+
 class InternalAPIResponse(BaseModel):
     """
     Response model from the internal API that classifies strategies.
@@ -60,6 +92,32 @@ class InternalAPIResponse(BaseModel):
     legs: List[Leg]
     
     # Allow additional fields that might be present
+    class Config:
+        extra = "allow"
+
+
+class StrategyAPIResponse(BaseModel):
+    """
+    New API response model that contains pre-classified strategies with all information.
+    
+    This model represents the new API structure where each response is already
+    a classified strategy with all legs and strategy information included.
+    """
+    id: str
+    executiondatetime: Optional[str] = None
+    price: Optional[float] = None
+    Ironprice: Optional[float] = None
+    Product: Optional[str] = None
+    Underlier: Optional[str] = None
+    Tenor: Optional[str] = None
+    instrument: Optional[str] = None
+    Legscount: Optional[int] = None
+    Notional: Optional[float] = None
+    Notionaltruncated: Optional[float] = None
+    Platform: Optional[str] = None
+    D2c: Optional[bool] = None
+    legs: List[LegAPI] = []
+    
     class Config:
         extra = "allow"
 
