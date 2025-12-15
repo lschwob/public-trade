@@ -593,6 +593,7 @@ async def websocket_endpoint(websocket: WebSocket):
             "type": "initial_state",
             "data": {
                 "trades": initial_trades,
+                "strategies": [s.dict() for s in tracked_strategies.values()],
                 "analytics": Analytics(
                     total_trades=daily_stats["total_trades"],
                     total_notional_eur=daily_stats["total_notional_eur"],

@@ -206,8 +206,15 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
         spread_leg1 = leg.Spreadleg1
         spread_leg2 = leg.Spreadleg2
         
-        # Extract identifier
-        dissemination_id = leg.id or leg.Upifisn or leg.Upi
+        # Extract identifier - convert to string if needed
+        dissemination_id = None
+        if leg.id is not None:
+            dissemination_id = str(leg.id)
+        elif leg.Upifisn:
+            dissemination_id = str(leg.Upifisn)
+        elif leg.Upi:
+            dissemination_id = str(leg.Upi)
+        
         if not dissemination_id:
             # Create a unique identifier based on leg data
             leg_dict = leg.dict(exclude_none=True)
@@ -250,7 +257,7 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
             unique_product_identifier_underlier_name=underlying_name,
             platform_identifier=leg.platformcode or leg.Platformname,
             package_indicator=leg.Packageindicator or False,
-            package_transaction_price=leg.Packagetransactionprice,
+            package_transaction_price=str(leg.Packagetransactionprice) if leg.Packagetransactionprice is not None else None,
             strategy_id=strategy_id,
             notional_eur=notional_leg1 if notional_currency_leg1 == "EUR" else None,  # Simplified
             tenor=tenor,
@@ -446,11 +453,15 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
                     pass
             
             # Get package transaction price from first leg that has it
+            # Handle None, NaN, and convert to string
             package_transaction_price = None
             for leg in response_data.legs:
-                if leg.Packagetransactionprice:
-                    package_transaction_price = leg.Packagetransactionprice
-                    break
+                if leg.Packagetransactionprice is not None:
+                    # Convert to string, handling None/NaN
+                    price_val = leg.Packagetransactionprice
+                    if price_val is not None:
+                        package_transaction_price = str(price_val)
+                        break
             
             strategy = Strategy(
                 strategy_id=response_data.id,

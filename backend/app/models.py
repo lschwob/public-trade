@@ -14,8 +14,9 @@ All models use Pydantic BaseModel for automatic validation and JSON serializatio
 """
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any, Union
+from pydantic import BaseModel, Field, validator
+import math
 
 
 class Leg(BaseModel):
@@ -48,7 +49,7 @@ class LegAPI(BaseModel):
     
     Represents a single leg with all its details from the new API format.
     """
-    id: Optional[str] = None
+    id: Optional[Union[str, int]] = None
     Upifisn: Optional[str] = None
     Upi: Optional[str] = None
     Rateunderlier: Optional[str] = None
@@ -65,10 +66,31 @@ class LegAPI(BaseModel):
     Spreadleg1: Optional[float] = None
     Spreadleg2: Optional[float] = None
     Packageindicator: Optional[bool] = None
-    Packagetransactionprice: Optional[str] = None
+    Packagetransactionprice: Optional[Union[str, float, int]] = None
     Packagespread: Optional[float] = None
     Tenorleg1: Optional[str] = None
     Tenorleg2: Optional[str] = None
+    
+    @validator('Packagetransactionprice', pre=True)
+    def handle_nan_package_price(cls, v):
+        """Convert NaN, None, or empty values to None."""
+        if v is None:
+            return None
+        if isinstance(v, (float, int)) and (math.isnan(v) or math.isinf(v)):
+            return None
+        if isinstance(v, str) and (v.lower() in ['nan', 'none', 'null', '']):
+            return None
+        return str(v) if v is not None else None
+    
+    @validator('Notionalamountleg1', 'Notionalamountleg2', 'Fixedrateleg1', 'Fixedrateleg2', 
+               'Spreadleg1', 'Spreadleg2', 'Packagespread', pre=True)
+    def handle_nan_numeric(cls, v):
+        """Convert NaN or inf values to None."""
+        if v is None:
+            return None
+        if isinstance(v, (float, int)) and (math.isnan(v) or math.isinf(v)):
+            return None
+        return v
     
     class Config:
         extra = "allow"
@@ -103,7 +125,7 @@ class StrategyAPIResponse(BaseModel):
     This model represents the new API structure where each response is already
     a classified strategy with all legs and strategy information included.
     """
-    id: str
+    id: Union[str, int]
     executiondatetime: Optional[str] = None
     price: Optional[float] = None
     Ironprice: Optional[float] = None
@@ -117,6 +139,20 @@ class StrategyAPIResponse(BaseModel):
     Platform: Optional[str] = None
     D2c: Optional[bool] = None
     legs: List[LegAPI] = []
+    
+    @validator('id', pre=True)
+    def convert_id_to_str(cls, v):
+        """Convert id to string regardless of input type."""
+        return str(v) if v is not None else None
+    
+    @validator('price', 'Ironprice', 'Notional', 'Notionaltruncated', pre=True)
+    def handle_nan_numeric(cls, v):
+        """Convert NaN or inf values to None."""
+        if v is None:
+            return None
+        if isinstance(v, (float, int)) and (math.isnan(v) or math.isinf(v)):
+            return None
+        return v
     
     class Config:
         extra = "allow"

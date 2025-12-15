@@ -1,0 +1,37 @@
+version: '3.8'
+
+# Alternative docker-compose configuration using host network mode
+# This allows the backend to be directly accessible on the host network
+# Usage: docker-compose -f docker-compose.host.yml up
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sdr-trades-backend
+    # Use host network mode for direct access
+    network_mode: host
+    volumes:
+      - ./excel_output:/app/excel_output
+    environment:
+      - EXCEL_OUTPUT_DIR=/app/excel_output
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sdr-trades-frontend
+    # Use host network mode for direct access
+    network_mode: host
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      # In host mode, use localhost directly
+      - VITE_WS_URL=ws://localhost:8000/ws
+      - VITE_API_URL=http://localhost:8000
+    restart: unless-stopped
+    depends_on:
+      - backend
