@@ -1001,13 +1001,13 @@ class AnalyticsEngine:
             if trades:
                 # Show sample of available trades for debugging
                 sample_currencies = set()
-                sample_tenors = set()
+                sample_instruments = set()
                 for t in trades[:10]:
                     if t.notional_currency_leg1:
                         sample_currencies.add(t.notional_currency_leg1)
-                    if t.tenor:
-                        sample_tenors.add(t.tenor)
-                logger.info(f"Sample currencies in buffer: {sample_currencies}, sample tenors: {sample_tenors}")
+                    if t.instrument:
+                        sample_instruments.add(t.instrument)
+                logger.info(f"Sample currencies in buffer: {sample_currencies}, sample instruments: {sample_instruments}")
         else:
             eur_count = len(recent_trades_eur)
             total_count = len(recent_trades)
@@ -1050,7 +1050,7 @@ class AnalyticsEngine:
         metrics_long: Dict
     ) -> Dict:
         """Calculate deltas between two time periods."""
-        tenor_deltas = {}
+        instrument_deltas = {}
         spread_deltas = {}
         
         # Calculate instrument deltas

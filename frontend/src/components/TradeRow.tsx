@@ -4,16 +4,15 @@
  * This component handles:
  * - Display of trade data in table cells
  * - Expansion of package legs (DTCC packages)
- * - Expansion of grouped trades (same timestamp/underlying)
- * - Strategy badge display with tenor pairs (e.g., "Spread 10s30s")
+ * - Strategy badge display with instrument pairs (e.g., "Spread 10Y/30Y")
  * - Forward trade indicator (FWD badge)
  * - Highlighting for new trades
  * 
  * Strategy labels:
  * - "Outright": Single trade, no package, no strategy
  * - "Multiline Compression": Package but no detected strategy
- * - "Spread 10s30s": Detected spread with tenor pair
- * - "Butterfly 10s15s30s": Detected butterfly with tenor legs
+ * - "Spread 10Y/30Y": Detected spread with instrument pair
+ * - "Butterfly 10Y/15Y/30Y": Detected butterfly with instrument legs
  * - "Curve ...": Detected curve trade
  */
 
@@ -97,8 +96,6 @@ export default function TradeRow({
         return 'bg-gray-100 text-gray-800';
     }
   };
-
-  const hasGroupedTrades = trade.grouped_trades && trade.grouped_trades.length > 0;
   
   const renderCell = (columnId: string) => {
     switch (columnId) {
@@ -153,27 +150,12 @@ export default function TradeRow({
         );
       
       case 'package':
-        const hasGroupedTrades = trade.grouped_trades && trade.grouped_trades.length > 0;
-        const totalGrouped = trade.grouped_trades_count || trade.grouped_trades?.length || 0;
-        
         return (
           <div className="flex items-center gap-2">
             {trade.package_indicator && (
               <span className="text-blue-600" title="Package trade">📦</span>
             )}
-            {hasGroupedTrades && onToggleExpand && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleExpand();
-                }}
-                className="text-green-600 hover:text-green-800 text-sm font-semibold px-2 py-1 rounded hover:bg-green-50 transition-colors border border-green-300"
-                title={isExpanded ? 'Collapse grouped trades' : `Expand ${totalGrouped} grouped trades`}
-              >
-                {isExpanded ? '▼' : '▶'} {totalGrouped}
-              </button>
-            )}
-            {hasLegs && !hasGroupedTrades && onToggleExpand && (
+            {hasLegs && onToggleExpand && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -304,61 +286,8 @@ export default function TradeRow({
               ))}
       </tr>
       
-      {/* Expanded Grouped Trades Dropdown */}
-      {isExpanded && hasGroupedTrades && trade.grouped_trades && trade.grouped_trades.length > 0 && (
-        <tr>
-          <td colSpan={visibleColumns.length} className="p-0 border-b border-gray-200">
-            <div className="bg-green-50 border-l-4 border-green-400">
-              <div className="px-4 py-2 bg-green-100 border-b border-green-200">
-                <div className="text-sm font-semibold text-green-900">
-                  Grouped Trades ({trade.grouped_trades.length}) - Same timestamp/underlying
-                </div>
-              </div>
-              <div className="divide-y divide-green-200">
-                {trade.grouped_trades.map((groupedTrade, index) => (
-                  <div key={groupedTrade.dissemination_identifier || index} className="px-4 py-3 bg-white/50">
-                    <div className="grid grid-cols-12 gap-4 text-xs">
-                      <div className="col-span-2">
-                        <span className="font-semibold text-gray-700">ID:</span>
-                        <div className="text-gray-600 font-mono mt-1">{groupedTrade.dissemination_identifier}</div>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="font-semibold text-gray-700">Underlying:</span>
-                        <div className="text-gray-600 mt-1">{groupedTrade.unique_product_identifier_underlier_name || '-'}</div>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="font-semibold text-gray-700">Notional:</span>
-                        <div className="text-gray-600 mt-1">
-                          {formatNotional(groupedTrade.notional_amount_leg1, groupedTrade.notional_currency_leg1)}
-                        </div>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="font-semibold text-gray-700">Instrument:</span>
-                        <div className="text-gray-600 mt-1">{groupedTrade.instrument || '-'}</div>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="font-semibold text-gray-700">Rate:</span>
-                        <div className="text-gray-600 mt-1 font-mono">
-                          {groupedTrade.fixed_rate_leg1 ? `${(groupedTrade.fixed_rate_leg1 * 100).toFixed(4)}%` : '-'}
-                        </div>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="font-semibold text-gray-700">EUR:</span>
-                        <div className="text-gray-600 mt-1 font-semibold">
-                          {formatEur(groupedTrade.notional_eur)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </td>
-        </tr>
-      )}
-      
       {/* Expanded Package Legs Dropdown */}
-      {isExpanded && !hasGroupedTrades && hasLegs && trade.package_legs && trade.package_legs.length > 0 && (
+      {isExpanded && hasLegs && trade.package_legs && trade.package_legs.length > 0 && (
         <tr>
           <td colSpan={visibleColumns.length} className="p-0 border-b border-gray-200">
             <div className="bg-blue-50 border-l-4 border-blue-400">

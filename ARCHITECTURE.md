@@ -66,21 +66,19 @@ process_trades()
   ├─→ Filtrage des doublons (seen_trade_ids)
   ├─→ Ajout au buffer (trade_buffer)
   ├─→ ExcelWriter.append_trade() (queue)
-  ├─→ StrategyDetector.detect_strategies()
+  ├─→ Traitement des stratégies pré-classifiées (de l'API)
   ├─→ AlertEngine.process_trade() (si nouveau)
-  ├─→ TradeGrouper.group_trades()
   └─→ broadcast_message("trade_update")
 ```
 
-### 3. Détection de stratégies
+### 3. Stratégies pré-classifiées
 
-```
-StrategyDetector.detect_strategies()
-  ├─→ _detect_package_strategy() (packageIndicator=TRUE)
-  └─→ _detect_custom_strategies() (même underlying, <20s)
-      ├─→ _classify_strategy_type() (Spread/Butterfly/Curve)
-      └─→ _extract_tenor_pair() (ex: "10Y/30Y")
-```
+L'API interne retourne déjà les stratégies groupées avec:
+- `instrument`: Maturité du swap (ex: "10Y", "5Y10Y")
+- `Product`: Type de stratégie (ex: "Spread", "Butterfly", "Curve")
+- `legs`: Liste de tous les legs de la stratégie
+
+Plus besoin de classification locale - les stratégies arrivent déjà structurées.
 
 ### 4. Génération d'alertes
 
@@ -128,11 +126,11 @@ Modèles Pydantic:
 - `CurveMetrics`, `FlowMetrics`, `RiskMetrics`, etc.
 
 ### `poller.py`
-Polling DTCC API:
+Polling de l'API interne:
 - `Poller`: Classe avec exponential backoff
-- `poll_dtcc_api()`: Requête HTTP asynchrone
-- `normalize_trade()`: Normalisation des données
-- `calculate_tenor()`: Calcul du tenor
+- `poll_internal_api()`: Requête HTTP asynchrone
+- `convert_strategy_api_response()`: Conversion des stratégies API
+- `normalize_leg_api_to_trade()`: Normalisation des legs
 - `parse_notional()`: Parsing avec support "+"
 
 ### `main.py`
@@ -149,13 +147,6 @@ Application FastAPI:
 - Prévention des doublons
 - Chargement au démarrage
 
-### `strategy_detector.py`
-Détection de stratégies:
-- `StrategyDetector`: Détection package et custom
-- Classification: Spread/Butterfly/Curve
-- Extraction des paires de tenors
-- Filtrage NEWT uniquement
-
 ### `alert_engine.py`
 Moteur d'alertes:
 - `AlertEngine`: Génération d'alertes
@@ -170,11 +161,6 @@ Calculs analytiques:
 - Flow metrics
 - Risk metrics
 - Real-time metrics
-
-### `trade_grouper.py`
-Groupement de trades:
-- `TradeGrouper`: Groupement par timestamp/underlying
-- Utilisé pour l'affichage dans le blotter
 
 ## Modules frontend
 

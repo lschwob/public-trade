@@ -251,12 +251,10 @@ sdr-trades/
 │   │   ├── config.py              # Configuration centralisée
 │   │   ├── models.py              # Modèles Pydantic (Trade, Strategy, Alert, etc.)
 │   │   ├── main.py                # Application FastAPI principale
-│   │   ├── poller.py              # Polling DTCC API
+│   │   ├── poller.py              # Polling API interne (stratégies pré-classifiées)
 │   │   ├── excel_writer.py        # Écriture Excel thread-safe
-│   │   ├── strategy_detector.py   # Détection de stratégies multi-legs
 │   │   ├── alert_engine.py        # Moteur d'alertes avec conversion EUR
-│   │   ├── trade_grouper.py       # Groupement de trades
-│   │   └── analytics_engine.py   # Calculs analytiques avancés
+│   │   └── analytics_engine.py    # Calculs analytiques avancés
 │   ├── excel_output/              # Fichiers Excel générés (gitignored)
 │   ├── Dockerfile
 │   └── requirements.txt

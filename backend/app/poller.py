@@ -100,58 +100,6 @@ def parse_date(date_str: str) -> Optional[datetime]:
         return None
 
 
-def calculate_tenor(effective_date: Optional[str], expiration_date: Optional[str]) -> Optional[str]:
-    """
-    Calculate tenor (maturity) from effective and expiration dates.
-    
-    Tenor is calculated as the time difference between effective and expiration dates,
-    rounded to standard market tenors (3M, 6M, 1Y, 2Y, 3Y, 5Y, 7Y, 10Y, 15Y, 20Y, 30Y).
-    
-    Args:
-        effective_date: Effective date of the swap (ISO string)
-        expiration_date: Expiration/maturity date of the swap (ISO string)
-        
-    Returns:
-        Tenor string (e.g., "2Y", "5Y", "10Y", "30Y+"), or None if calculation fails
-        
-    Examples:
-        >>> calculate_tenor("2024-01-01", "2026-01-01")
-        "2Y"
-        >>> calculate_tenor("2024-01-01", "2034-01-01")
-        "10Y"
-    """
-    if not effective_date or not expiration_date:
-        return None
-    
-    try:
-        eff = datetime.fromisoformat(effective_date)
-        exp = datetime.fromisoformat(expiration_date)
-        years = (exp - eff).days / 365.25
-        
-        if years < 1:
-            return f"{int(years * 12)}M"
-        elif years < 2:
-            return "1Y"
-        elif years < 3:
-            return "2Y"
-        elif years < 5:
-            return "3Y"
-        elif years < 7:
-            return "5Y"
-        elif years < 10:
-            return "7Y"
-        elif years < 15:
-            return "10Y"
-        elif years < 20:
-            return "15Y"
-        elif years < 30:
-            return "20Y"
-        else:
-            return "30Y+"
-    except (ValueError, TypeError):
-        return None
-
-
 def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime: Optional[str] = None, instrument: Optional[str] = None) -> Optional[Trade]:
     """
     Convert a LegAPI from new API to a Trade model.
@@ -278,7 +226,7 @@ def normalize_leg_to_trade(leg: Leg, strategy_id: Optional[str] = None, date_str
     - Date parsing and validation
     - Notional parsing
     - Rate parsing
-    - Tenor extraction or calculation
+    - Instrument extraction
     - Forward trade detection
     
     Args:
@@ -413,21 +361,26 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
             unique_instruments = sorted(list(set(instruments))) if instruments else []
             instrument_pair = "/".join(unique_instruments) if unique_instruments else None
             
-            # Classify strategy type based on leg count
-            num_legs = response_data.Legscount or len(leg_trades)
-            if num_legs == 1:
-                strategy_type = "Outright"
-            elif num_legs == 2:
-                strategy_type = "Spread"
-            elif num_legs == 3:
-                strategy_type = "Butterfly"
-            elif num_legs >= 4:
-                strategy_type = "Curve"
+            # Use Product from API if available, otherwise classify based on leg count
+            if response_data.Product:
+                strategy_type = response_data.Product
             else:
-                strategy_type = "Package"
-            
-            if instrument_pair:
-                strategy_type = f"{instrument_pair} {strategy_type}"
+                # Fallback: Classify strategy type based on leg count
+                num_legs = response_data.Legscount or len(leg_trades)
+                if num_legs == 1:
+                    strategy_type = "Outright"
+                elif num_legs == 2:
+                    strategy_type = "Spread"
+                elif num_legs == 3:
+                    strategy_type = "Butterfly"
+                elif num_legs >= 4:
+                    strategy_type = "Curve"
+                else:
+                    strategy_type = "Package"
+                
+                # Add instrument pair if available
+                if instrument_pair:
+                    strategy_type = f"{instrument_pair} {strategy_type}"
             
             # Calculate total notional
             total_notional = response_data.Notional or response_data.Notionaltruncated

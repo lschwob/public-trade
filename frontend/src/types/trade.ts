@@ -43,9 +43,6 @@ export interface Trade {
   instrument?: string;
   package_legs?: Trade[];  // Legs if this is a package trade
   package_legs_count?: number;  // Total number of legs in package
-  grouped_trades?: Trade[];  // Trades in the same group (same timestamp, underlying, etc.)
-  grouped_trades_count?: number;  // Total number of trades in group
-  group_id?: string;  // Group identifier
 }
 
 /**
