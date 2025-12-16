@@ -57,7 +57,31 @@ export function useWebSocket() {
 
       ws.onmessage = (event) => {
         try {
+          // Parse and sanitize the message data
           const message: WebSocketMessage = JSON.parse(event.data);
+          
+          // Helper to replace NaN values with null
+          const sanitizeValue = (val: any): any => {
+            if (typeof val === 'number' && !isFinite(val)) {
+              return null;
+            }
+            if (typeof val === 'object' && val !== null) {
+              if (Array.isArray(val)) {
+                return val.map(sanitizeValue);
+              }
+              const sanitized: any = {};
+              for (const key in val) {
+                sanitized[key] = sanitizeValue(val[key]);
+              }
+              return sanitized;
+            }
+            return val;
+          };
+          
+          // Sanitize message data
+          if (message.data) {
+            message.data = sanitizeValue(message.data);
+          }
           
           switch (message.type) {
             case 'initial_state':

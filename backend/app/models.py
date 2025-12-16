@@ -82,7 +82,36 @@ class LegAPI(BaseModel):
             return None
         return str(v) if v is not None else None
     
-    @validator('notionalAmountLeg1', 'notionalAmountLeg2', 'fixedRateLeg1', 'fixedRateLeg2', 
+    @validator('notionalAmountLeg1', 'notionalAmountLeg2', pre=True)
+    def handle_notional_amount(cls, v):
+        """Convert NaN or inf values to None, and parse string amounts like '20M', '2B'."""
+        if v is None:
+            return None
+        if isinstance(v, (float, int)) and (math.isnan(v) or math.isinf(v)):
+            return None
+        # Handle string formats like "20M", "2B", "150M"
+        if isinstance(v, str):
+            v_upper = v.strip().upper()
+            if not v_upper or v_upper in ['NAN', 'NONE', 'NULL', '']:
+                return None
+            try:
+                multiplier = 1.0
+                cleaned = v_upper.replace(',', '').replace(' ', '').rstrip('+')
+                if cleaned.endswith('B'):
+                    multiplier = 1_000_000_000
+                    cleaned = cleaned[:-1]
+                elif cleaned.endswith('M'):
+                    multiplier = 1_000_000
+                    cleaned = cleaned[:-1]
+                elif cleaned.endswith('K'):
+                    multiplier = 1_000
+                    cleaned = cleaned[:-1]
+                return float(cleaned) * multiplier
+            except (ValueError, TypeError):
+                return None
+        return v
+    
+    @validator('fixedRateLeg1', 'fixedRateLeg2', 
                'spreadLeg1', 'spreadLeg2', 'packageSpread', pre=True)
     def handle_nan_numeric(cls, v):
         """Convert NaN or inf values to None."""
@@ -145,8 +174,37 @@ class StrategyAPIResponse(BaseModel):
         """Convert id to string regardless of input type."""
         return str(v) if v is not None else None
     
-    @validator('price', 'ironPrice', 'notional', 'notionalTruncated', pre=True)
-    def handle_nan_numeric(cls, v):
+    @validator('notional', 'notionalTruncated', pre=True)
+    def handle_notional_amount_strategy(cls, v):
+        """Convert NaN or inf values to None, and parse string amounts like '20M', '2B'."""
+        if v is None:
+            return None
+        if isinstance(v, (float, int)) and (math.isnan(v) or math.isinf(v)):
+            return None
+        # Handle string formats like "20M", "2B", "150M"
+        if isinstance(v, str):
+            v_upper = v.strip().upper()
+            if not v_upper or v_upper in ['NAN', 'NONE', 'NULL', '']:
+                return None
+            try:
+                multiplier = 1.0
+                cleaned = v_upper.replace(',', '').replace(' ', '').rstrip('+')
+                if cleaned.endswith('B'):
+                    multiplier = 1_000_000_000
+                    cleaned = cleaned[:-1]
+                elif cleaned.endswith('M'):
+                    multiplier = 1_000_000
+                    cleaned = cleaned[:-1]
+                elif cleaned.endswith('K'):
+                    multiplier = 1_000
+                    cleaned = cleaned[:-1]
+                return float(cleaned) * multiplier
+            except (ValueError, TypeError):
+                return None
+        return v
+    
+    @validator('price', 'ironPrice', pre=True)
+    def handle_nan_numeric_price(cls, v):
         """Convert NaN or inf values to None."""
         if v is None:
             return None

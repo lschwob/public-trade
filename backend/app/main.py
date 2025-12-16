@@ -103,6 +103,30 @@ daily_stats = {
 recent_alerts: List[Alert] = []
 
 
+def sanitize_for_json(obj):
+    """
+    Sanitize an object for JSON serialization by converting NaN and Inf to None.
+    
+    Args:
+        obj: Object to sanitize (dict, list, or primitive)
+        
+    Returns:
+        Sanitized object safe for JSON serialization
+    """
+    import math
+    
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(item) for item in obj]
+    elif isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    else:
+        return obj
+
+
 async def broadcast_message(message_type: str, data: dict):
     """
     Broadcast message to all connected WebSocket clients.
@@ -118,9 +142,12 @@ async def broadcast_message(message_type: str, data: dict):
         Disconnected clients are automatically removed from active_connections
         to prevent memory leaks.
     """
+    # Sanitize data to remove NaN and Inf values
+    sanitized_data = sanitize_for_json(data)
+    
     message = {
         "type": message_type,
-        "data": data,
+        "data": sanitized_data,
         "timestamp": datetime.utcnow().isoformat()
     }
     

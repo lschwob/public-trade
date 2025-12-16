@@ -19,6 +19,8 @@ from typing import List, Dict, Optional
 from collections import defaultdict
 import statistics
 
+import math
+
 from app.models import (
     Trade, Strategy, Alert, InstrumentDetail, SpreadDetail, SpreadMetrics,
     ProFlowMetrics, VolatilityMetrics, ExecutionMetrics, PriceImpactMetrics,
@@ -510,15 +512,25 @@ class AnalyticsEngine:
             vwap = (total_weighted / total_notional * 100) if total_notional > 0 else None
             
             # Volatility (annualized)
+            std_dev = None
             if len(rates) > 1:
-                std_dev = statistics.stdev(rates)
-                # Annualize: assume trades over time_window, scale to year
-                volatility = std_dev * (252 ** 0.5) * 100  # Rough annualization
+                try:
+                    # Filter out any NaN or infinite values
+                    valid_rates = [r for r in rates if not (math.isnan(r) or math.isinf(r))]
+                    if len(valid_rates) > 1:
+                        std_dev = statistics.stdev(valid_rates)
+                        # Annualize: assume trades over time_window, scale to year
+                        volatility = std_dev * (252 ** 0.5) * 100  # Rough annualization
+                    else:
+                        volatility = None
+                except (statistics.StatisticsError, ValueError) as e:
+                    logger.warning(f"Error calculating stdev for instrument {instrument}: {e}")
+                    volatility = None
             else:
                 volatility = None
             
             # Bid/Ask spread estimation (simplified: use std dev of rates)
-            bid_ask_spread = (std_dev * 10000) if len(rates) > 1 else None  # Convert to bps
+            bid_ask_spread = (std_dev * 10000) if std_dev is not None else None  # Convert to bps
             
             # Price impact (simplified: correlation between size and rate movement)
             # Group by size buckets and measure impact
