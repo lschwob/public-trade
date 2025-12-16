@@ -123,9 +123,9 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
     """
     try:
         # Parse dates
-        effective_date_str = leg.effectivedate
-        expiration_date_str = leg.expirationdate
-        execution_timestamp_str = leg.executiontime or leg.eventtime or execution_datetime
+        effective_date_str = leg.effectiveDate
+        expiration_date_str = leg.expirationDate
+        execution_timestamp_str = leg.executionTime or leg.eventTime or execution_datetime
         
         effective_date_dt = None
         is_forward = False
@@ -146,21 +146,21 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
         execution_timestamp = parse_date(execution_timestamp_str) or datetime.utcnow()
         
         # Extract notional - use leg1, fallback to leg2
-        notional_leg1 = leg.notionalamountleg1 or 0.0
-        notional_leg2 = leg.notionalamountleg2 or notional_leg1
+        notional_leg1 = leg.notionalAmountLeg1 or 0.0
+        notional_leg2 = leg.notionalAmountLeg2 or notional_leg1
         
         # Extract rates
-        fixed_rate_leg1 = leg.fixedrateleg1
-        fixed_rate_leg2 = leg.fixedrateleg2
-        spread_leg1 = leg.spreadleg1
-        spread_leg2 = leg.spreadleg2
+        fixed_rate_leg1 = leg.fixedRateLeg1
+        fixed_rate_leg2 = leg.fixedRateLeg2
+        spread_leg1 = leg.spreadLeg1
+        spread_leg2 = leg.spreadLeg2
         
         # Extract identifier - convert to string if needed
         dissemination_id = None
         if leg.id is not None:
             dissemination_id = str(leg.id)
-        elif leg.upifisn:
-            dissemination_id = str(leg.upifisn)
+        elif leg.upiIsin:
+            dissemination_id = str(leg.upiIsin)
         elif leg.upi:
             dissemination_id = str(leg.upi)
         
@@ -170,8 +170,8 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
             leg_hash = hash(str(sorted(leg_dict.items())))
             dissemination_id = f"LEG_{abs(leg_hash)}"
         
-        # Extract underlying from rateunderlier or upi
-        underlying_name = leg.rateunderlier or leg.upi or "UNKNOWN"
+        # Extract underlying from rateUnderlier or upi
+        underlying_name = leg.rateUnderlier or leg.upi or "UNKNOWN"
         
         # Extract instrument (maturity of swap) - use instrument from strategy level
         # The instrument represents the maturity of the swap (e.g., "10Y", "5Y10Y")
@@ -204,9 +204,9 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
             unique_product_identifier=leg.upi or "UNKNOWN",
             unique_product_identifier_short_name=None,
             unique_product_identifier_underlier_name=underlying_name,
-            platform_identifier=leg.platformcode or leg.platformname,
-            package_indicator=leg.packageindicator or False,
-            package_transaction_price=str(leg.packagetransactionprice) if leg.packagetransactionprice is not None else None,
+            platform_identifier=leg.platformCode or leg.platformName,
+            package_indicator=leg.packageIndicator or False,
+            package_transaction_price=str(leg.packageTransactionPrice) if leg.packageTransactionPrice is not None else None,
             strategy_id=strategy_id,
             notional_eur=notional_leg1 if notional_currency_leg1 == "EUR" else None,  # Simplified
             instrument=instrument,  # Passed from strategy level
@@ -332,7 +332,7 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
     
     try:
         # Parse execution datetime
-        execution_datetime = response_data.executiondatetime
+        execution_datetime = response_data.executionDateTime
         
         # Convert each leg to a Trade
         leg_trades = []
@@ -352,7 +352,7 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
                 strategy_type = response_data.product
             else:
                 # Fallback: Classify strategy type based on leg count
-                num_legs = response_data.legscount or len(leg_trades)
+                num_legs = response_data.legsCount or len(leg_trades)
                 if num_legs == 1:
                     strategy_type = "Outright"
                 elif num_legs == 2:
@@ -365,7 +365,7 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
                     strategy_type = "Package"
             
             # Calculate total notional
-            total_notional = response_data.notional or response_data.notionaltruncated
+            total_notional = response_data.notional or response_data.notionalTruncated
             if not total_notional:
                 total_notional = sum(t.notional_eur or t.notional_amount_leg1 for t in leg_trades)
             
@@ -386,9 +386,9 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
             # Handle None, NaN, and convert to string
             package_transaction_price = None
             for leg in response_data.legs:
-                if leg.packagetransactionprice is not None:
+                if leg.packageTransactionPrice is not None:
                     # Convert to string, handling None/NaN
-                    price_val = leg.packagetransactionprice
+                    price_val = leg.packageTransactionPrice
                     if price_val is not None:
                         package_transaction_price = str(price_val)
                         break
