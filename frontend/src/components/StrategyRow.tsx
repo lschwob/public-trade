@@ -5,6 +5,7 @@
  * to show all the legs (trades) that make up the strategy.
  */
 
+import { memo } from 'react';
 import { Trade, Strategy } from '../types/trade';
 import { ColumnConfig } from './Blotter';
 import TradeRow from './TradeRow';
@@ -22,7 +23,7 @@ interface StrategyRowProps {
   strategies?: Strategy[];
 }
 
-export default function StrategyRow({
+function StrategyRowComponent({
   strategy,
   trades,
   highlighted,
@@ -128,9 +129,12 @@ export default function StrategyRow({
           .filter((r): r is number => r !== undefined && r !== null)
           .reduce((sum, r, _, arr) => sum + r / arr.length, 0);
         
+        // Check if rate is already in percentage or in decimal
+        const displayRate = Math.abs(avgRate) > 1 ? avgRate : avgRate * 100;
+        
         return (
           <div className="text-gray-700 font-mono text-xs">
-            {avgRate > 0 ? `${(avgRate * 100).toFixed(4)}%` : '-'}
+            {avgRate !== 0 ? `${displayRate.toFixed(4)}%` : '-'}
           </div>
         );
       
@@ -266,3 +270,19 @@ export default function StrategyRow({
     </>
   );
 }
+
+// Memoize StrategyRow to prevent unnecessary re-renders
+// Only re-render if strategy data, highlighted status, or expansion state changes
+export default memo(StrategyRowComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.strategy.strategy_id === nextProps.strategy.strategy_id &&
+    prevProps.highlighted === nextProps.highlighted &&
+    prevProps.isExpanded === nextProps.isExpanded &&
+    prevProps.visibleColumns.length === nextProps.visibleColumns.length &&
+    // Check if the strategy data has actually changed
+    prevProps.strategy.total_notional_eur === nextProps.strategy.total_notional_eur &&
+    prevProps.trades.length === nextProps.trades.length &&
+    // Compare first trade's timestamp to detect if trades changed
+    prevProps.trades[0]?.execution_timestamp === nextProps.trades[0]?.execution_timestamp
+  );
+});
