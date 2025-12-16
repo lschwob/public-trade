@@ -16,7 +16,7 @@
  * - "Curve ...": Detected curve trade
  */
 
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { Trade, Strategy } from '../types/trade';
 import { ColumnConfig } from './Blotter';
 
@@ -34,7 +34,7 @@ interface TradeRowProps {
   strategies?: Strategy[];
 }
 
-export default function TradeRow({
+function TradeRowComponent({
   trade,
   highlighted,
   isLeg = false,
@@ -330,3 +330,21 @@ export default function TradeRow({
     </>
   );
 }
+
+// Memoize TradeRow to prevent unnecessary re-renders
+// Only re-render if trade data, highlighted status, or expansion state changes
+export default memo(TradeRowComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.trade.dissemination_identifier === nextProps.trade.dissemination_identifier &&
+    prevProps.highlighted === nextProps.highlighted &&
+    prevProps.isLeg === nextProps.isLeg &&
+    prevProps.isExpanded === nextProps.isExpanded &&
+    prevProps.hasLegs === nextProps.hasLegs &&
+    prevProps.visibleColumns.length === nextProps.visibleColumns.length &&
+    // Check if the trade data has actually changed by comparing key fields
+    prevProps.trade.execution_timestamp === nextProps.trade.execution_timestamp &&
+    prevProps.trade.notional_eur === nextProps.trade.notional_eur &&
+    prevProps.trade.fixed_rate_leg1 === nextProps.trade.fixed_rate_leg1 &&
+    prevProps.trade.strategy_id === nextProps.trade.strategy_id
+  );
+});

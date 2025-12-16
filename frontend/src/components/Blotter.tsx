@@ -12,7 +12,7 @@
  * The blotter groups trades by strategy when available (from API pre-classification).
  */
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Trade, Strategy } from '../types/trade';
 import TradeRow from './TradeRow';
 import StrategyRow from './StrategyRow';
@@ -191,7 +191,7 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
     prevTradesLengthRef.current = trades.length;
   }, [trades]);
 
-  const toggleExpand = (tradeId: string) => {
+  const toggleExpand = useCallback((tradeId: string) => {
     setExpandedTrades(prev => {
       const next = new Set(prev);
       if (next.has(tradeId)) {
@@ -201,9 +201,9 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
       }
       return next;
     });
-  };
+  }, []);
 
-  const toggleStrategyExpand = (strategyId: string) => {
+  const toggleStrategyExpand = useCallback((strategyId: string) => {
     setExpandedStrategies(prev => {
       const next = new Set(prev);
       if (next.has(strategyId)) {
@@ -213,7 +213,7 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
       }
       return next;
     });
-  };
+  }, []);
 
   // Group trades by strategy
   const tradesByStrategy = useMemo(() => {
