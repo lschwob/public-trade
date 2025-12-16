@@ -82,12 +82,15 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
     localStorage.setItem('blotter-columns', JSON.stringify(columns));
   }, [columns]);
 
-  // Helper function to sort tenors
-  const sortTenors = (tenors: string[]): string[] => {
-    const tenorOrder = ["3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"];
-    return tenors.sort((a, b) => {
-      const indexA = tenorOrder.indexOf(a);
-      const indexB = tenorOrder.indexOf(b);
+  // Helper function to sort instruments (using instrumentSort utility)
+  const sortInstruments = (instruments: string[]): string[] => {
+    const instrumentOrder = ["3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"];
+    return instruments.sort((a, b) => {
+      // Extract base instrument for sorting (e.g., "10Y" from "5Y10Y")
+      const baseA = a.split('/')[0] || a;
+      const baseB = b.split('/')[0] || b;
+      const indexA = instrumentOrder.indexOf(baseA);
+      const indexB = instrumentOrder.indexOf(baseB);
       if (indexA === -1) return 1;
       if (indexB === -1) return -1;
       return indexA - indexB;
@@ -100,9 +103,9 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
     [trades]
   );
 
-  const uniqueTenors = useMemo(() => {
-    const tenors = Array.from(new Set(trades.map(t => t.tenor).filter((t): t is string => Boolean(t))));
-    return sortTenors(tenors);
+  const uniqueInstruments = useMemo(() => {
+    const instruments = Array.from(new Set(trades.map(t => t.instrument).filter((t): t is string => Boolean(t))));
+    return sortInstruments(instruments);
   }, [trades]);
 
   const uniquePlatforms = useMemo(() => 
@@ -110,10 +113,10 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
     [trades]
   );
 
-  // Get unique tenor pairs from strategies
-  const uniqueTenorPairs = useMemo(() => {
+  // Get unique instrument pairs from strategies
+  const uniqueInstrumentPairs = useMemo(() => {
     const pairs = Array.from(
-      new Set(strategies.map(s => s.tenor_pair).filter(Boolean))
+      new Set(strategies.map(s => s.instrument_pair).filter(Boolean))
     ).sort();
     return pairs;
   }, [strategies]);
@@ -137,9 +140,9 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
       filtered = filtered.filter(t => t.action_type === actionFilter);
     }
     
-    // Tenor filter
+    // Instrument filter
     if (tenorFilter !== 'all') {
-      filtered = filtered.filter(t => t.tenor === tenorFilter);
+      filtered = filtered.filter(t => t.instrument === tenorFilter);
     }
     
     // Forward/Spot filter
@@ -174,12 +177,12 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
       filtered = filtered.filter(t => t.platform_identifier === platformFilter);
     }
     
-    // Tenor Pair filter (existing)
+    // Instrument Pair filter (existing)
     if (tenorPairFilter !== 'all') {
       filtered = filtered.filter(trade => {
         if (!trade.strategy_id) return false;
         const strategy = strategies.find(s => s.strategy_id === trade.strategy_id);
-        return strategy?.tenor_pair === tenorPairFilter;
+        return strategy?.instrument_pair === tenorPairFilter;
       });
     }
     
@@ -399,15 +402,15 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
               ))}
             </select>
             
-            {/* Tenor Filter */}
+            {/* Instrument Filter */}
             <select
               value={tenorFilter}
               onChange={(e) => setTenorFilter(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
             >
-              <option value="all">All Tenors</option>
-              {uniqueTenors.map(tenor => (
-                <option key={tenor} value={tenor}>{tenor}</option>
+              <option value="all">All Instruments</option>
+              {uniqueInstruments.map(instrument => (
+                <option key={instrument} value={instrument}>{instrument}</option>
               ))}
             </select>
             
@@ -448,15 +451,15 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
               ))}
             </select>
             
-            {/* Tenor Pair Filter (existing) */}
-            {uniqueTenorPairs.length > 0 && (
+            {/* Instrument Pair Filter (existing) */}
+            {uniqueInstrumentPairs.length > 0 && (
               <select
                 value={tenorPairFilter}
                 onChange={(e) => setTenorPairFilter(e.target.value)}
                 className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
               >
-                <option value="all">All Tenor Pairs</option>
-                {uniqueTenorPairs.map(pair => (
+                <option value="all">All Instrument Pairs</option>
+                {uniqueInstrumentPairs.map(pair => (
                   <option key={pair} value={pair}>{pair}</option>
                 ))}
               </select>

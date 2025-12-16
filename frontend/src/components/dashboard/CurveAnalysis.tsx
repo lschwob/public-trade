@@ -12,7 +12,7 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
-import { sortByTenor } from '../../utils/tenorSort';
+import { sortByInstrument } from '../../utils/instrumentSort';
 import Heatmap from '../charts/Heatmap';
 
 interface CurveAnalysisProps {
@@ -34,9 +34,9 @@ export default function CurveAnalysis({ curveMetrics, strategyMetrics }: CurveAn
     return `${(value * 100).toFixed(4)}%`;
   };
 
-  // Sort tenor distribution by tenor order
-  const sortedTenorDistribution = useMemo(() => 
-    sortByTenor(curveMetrics?.tenor_distribution || []),
+  // Sort instrument distribution by instrument order
+  const sortedInstrumentDistribution = useMemo(() => 
+    sortByInstrument(curveMetrics?.instrument_distribution || []),
     [curveMetrics]
   );
 
@@ -48,14 +48,14 @@ export default function CurveAnalysis({ curveMetrics, strategyMetrics }: CurveAn
     );
   }
 
-  // Prepare data for rate by tenor chart
-  const rateByTenorData = Object.entries(curveMetrics.average_rate_by_tenor).map(([tenor, rate]) => ({
-    tenor,
+  // Prepare data for rate by instrument chart
+  const rateByInstrumentData = Object.entries(curveMetrics.average_rate_by_instrument).map(([instrument, rate]) => ({
+    instrument,
     rate: rate * 100 // Convert to percentage
   }));
 
-  // Tenor spread cards
-  const spreads = Object.entries(curveMetrics.tenor_spread).map(([spread, value]) => ({
+  // Instrument spread cards
+  const spreads = Object.entries(curveMetrics.instrument_spread).map(([spread, value]) => ({
     name: spread,
     value: value * 100, // Convert to bps
     color: value > 0 ? 'text-green-600' : 'text-red-600'
@@ -63,7 +63,7 @@ export default function CurveAnalysis({ curveMetrics, strategyMetrics }: CurveAn
 
   return (
     <div className="p-6 space-y-6">
-      {/* Tenor Spread Indicators */}
+      {/* Instrument Spread Indicators */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {spreads.map((spread) => (
           <div key={spread.name} className="bg-white rounded-lg shadow p-6">
@@ -82,14 +82,14 @@ export default function CurveAnalysis({ curveMetrics, strategyMetrics }: CurveAn
 
       {/* Charts Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Tenor Distribution */}
+        {/* Instrument Distribution */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Tenor Distribution by Notional</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Instrument Distribution by Notional</h3>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={sortedTenorDistribution}>
+          <BarChart data={sortedInstrumentDistribution}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
-                dataKey="tenor" 
+                dataKey="instrument" 
                 tick={{ fontSize: 12 }}
               />
               <YAxis tickFormatter={formatNotional} />
@@ -99,14 +99,14 @@ export default function CurveAnalysis({ curveMetrics, strategyMetrics }: CurveAn
           </ResponsiveContainer>
         </div>
 
-        {/* Average Rate by Tenor */}
+        {/* Average Rate by Instrument */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Average Rate by Tenor</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Average Rate by Instrument</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={rateByTenorData}>
+            <LineChart data={rateByInstrumentData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
-                dataKey="tenor" 
+                dataKey="instrument" 
                 tick={{ fontSize: 12 }}
               />
               <YAxis 
@@ -125,15 +125,15 @@ export default function CurveAnalysis({ curveMetrics, strategyMetrics }: CurveAn
         </div>
       </div>
 
-      {/* Tenor Details Table */}
+      {/* Instrument Details Table */}
       <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Tenor Details</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Instrument Details</h3>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Tenor
+                  Instrument
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Notional (EUR)
@@ -147,19 +147,19 @@ export default function CurveAnalysis({ curveMetrics, strategyMetrics }: CurveAn
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {sortedTenorDistribution.map((tenor) => (
-                <tr key={tenor.tenor}>
+              {sortedInstrumentDistribution.map((item) => (
+                <tr key={item.instrument}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {tenor.tenor}
+                    {item.instrument}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatNotional(tenor.notional)}
+                    {formatNotional(item.notional)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {tenor.count}
+                    {item.count}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {tenor.avg_rate !== null ? formatRate(tenor.avg_rate) : 'N/A'}
+                    {item.avg_rate !== null ? formatRate(item.avg_rate) : 'N/A'}
                   </td>
                 </tr>
               ))}
@@ -168,16 +168,16 @@ export default function CurveAnalysis({ curveMetrics, strategyMetrics }: CurveAn
         </div>
       </div>
 
-      {/* Most Popular Tenor Pairs */}
-      {strategyMetrics?.tenor_pair_distribution && strategyMetrics.tenor_pair_distribution.length > 0 && (
+      {/* Most Popular Instrument Pairs */}
+      {strategyMetrics?.instrument_pair_distribution && strategyMetrics.instrument_pair_distribution.length > 0 && (
         <>
           <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Most Popular Tenor Pairs</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Most Popular Instrument Pairs</h3>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={strategyMetrics.tenor_pair_distribution.slice(0, 10)}>
+              <BarChart data={strategyMetrics.instrument_pair_distribution.slice(0, 10)}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 
-                  dataKey="tenor_pair" 
+                  dataKey="instrument_pair" 
                   tick={{ fontSize: 12 }}
                   angle={-45}
                   textAnchor="end"
@@ -190,15 +190,15 @@ export default function CurveAnalysis({ curveMetrics, strategyMetrics }: CurveAn
             </ResponsiveContainer>
           </div>
 
-          {/* Tenor Pair Statistics Table */}
+          {/* Instrument Pair Statistics Table */}
           <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Tenor Pair Statistics</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Instrument Pair Statistics</h3>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Tenor Pair
+                      Instrument Pair
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Count
@@ -212,10 +212,10 @@ export default function CurveAnalysis({ curveMetrics, strategyMetrics }: CurveAn
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {strategyMetrics.tenor_pair_distribution.map((pair) => (
-                    <tr key={pair.tenor_pair}>
+                  {strategyMetrics.instrument_pair_distribution.map((pair) => (
+                    <tr key={pair.instrument_pair}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {pair.tenor_pair}
+                        {pair.instrument_pair}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {pair.count}

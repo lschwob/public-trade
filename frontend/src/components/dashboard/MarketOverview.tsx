@@ -31,8 +31,8 @@ export default function MarketOverview({ analytics }: MarketOverviewProps) {
   };
 
   // Quick insights
-  const mostActiveTenor = analytics.curve_metrics?.tenor_distribution
-    .sort((a, b) => b.notional - a.notional)[0]?.tenor || 'N/A';
+  const mostActiveInstrument = analytics.curve_metrics?.instrument_distribution
+    .sort((a, b) => b.notional - a.notional)[0]?.instrument || 'N/A';
   
   const mostActivePlatform = analytics.flow_metrics?.platform_market_share[0]?.platform || 'N/A';
   
@@ -84,8 +84,8 @@ export default function MarketOverview({ analytics }: MarketOverviewProps) {
       {/* Quick Insights Row */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-xs text-gray-600 mb-1">Most Active Tenor</div>
-          <div className="text-lg font-semibold text-blue-600">{mostActiveTenor}</div>
+          <div className="text-xs text-gray-600 mb-1">Most Active Instrument</div>
+          <div className="text-lg font-semibold text-blue-600">{mostActiveInstrument}</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4">
           <div className="text-xs text-gray-600 mb-1">Most Active Platform</div>
@@ -123,14 +123,14 @@ export default function MarketOverview({ analytics }: MarketOverviewProps) {
           </ResponsiveContainer>
         </div>
 
-        {/* Tenor Distribution */}
+        {/* Instrument Distribution */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Tenor Distribution</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Instrument Distribution</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={analytics.curve_metrics?.tenor_distribution || []}>
+            <BarChart data={analytics.curve_metrics?.instrument_distribution || []}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
-                dataKey="tenor" 
+                dataKey="instrument" 
                 tick={{ fontSize: 12 }}
               />
               <YAxis tickFormatter={formatNotional} />

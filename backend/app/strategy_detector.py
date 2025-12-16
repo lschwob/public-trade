@@ -122,11 +122,11 @@ class StrategyDetector:
                 # Update total notional (would need EUR conversion, simplified here)
                 self.trade_to_strategy[trade.dissemination_identifier] = strategy.strategy_id
             
-            # Extract and update tenor pair (only from NEWT trades)
-            tenor_pair, tenor_legs = self._extract_tenor_pair(package_trades)
-            strategy.tenor_pair = tenor_pair
-            strategy.tenor_legs = tenor_legs
-            strategy.strategy_type = self._classify_strategy_type(len(strategy.legs), tenor_pair)
+            # Extract and update instrument pair (only from NEWT trades)
+            instrument_pair, instrument_legs = self._extract_instrument_pair(package_trades)
+            strategy.instrument_pair = instrument_pair
+            strategy.instrument_legs = instrument_legs
+            strategy.strategy_type = self._classify_strategy_type(len(strategy.legs), instrument_pair)
             
             return strategy
         else:
@@ -134,8 +134,8 @@ class StrategyDetector:
             strategy_id = f"PKG_{uuid.uuid4().hex[:8].upper()}"
             underlying = trade.unique_product_identifier_underlier_name or "Unknown"
             
-            # Extract tenor pair
-            tenor_pair, tenor_legs = self._extract_tenor_pair(package_trades)
+            # Extract instrument pair
+            instrument_pair, instrument_legs = self._extract_instrument_pair(package_trades)
             
             strategy = Strategy(
                 strategy_id=strategy_id,
@@ -146,15 +146,15 @@ class StrategyDetector:
                 execution_start=trade.execution_timestamp,
                 execution_end=trade.execution_timestamp,
                 package_transaction_price=package_price,
-                tenor_pair=tenor_pair,
-                tenor_legs=tenor_legs
+                instrument_pair=instrument_pair,
+                instrument_legs=instrument_legs
             )
             
             self.package_strategies[package_price] = strategy
             self.trade_to_strategy[trade.dissemination_identifier] = strategy_id
             
-            # Classify strategy type based on number of legs and tenor pair
-            strategy.strategy_type = self._classify_strategy_type(len(strategy.legs), tenor_pair)
+            # Classify strategy type based on number of legs and instrument pair
+            strategy.strategy_type = self._classify_strategy_type(len(strategy.legs), instrument_pair)
             
             return strategy
     
@@ -197,8 +197,8 @@ class StrategyDetector:
                         existing_strategy_id = self.trade_to_strategy[trade_id]
                         break
                 
-                # Extract tenor pair from group trades
-                tenor_pair, tenor_legs = self._extract_tenor_pair(group_trades)
+                # Extract instrument pair from group trades
+                instrument_pair, instrument_legs = self._extract_instrument_pair(group_trades)
                 
                 if existing_strategy_id:
                     # Update existing strategy
@@ -211,24 +211,24 @@ class StrategyDetector:
                     strategy.total_notional_eur = sum(
                         t.notional_eur or 0.0 for t in group_trades
                     )
-                    # Update tenor pair
-                    strategy.tenor_pair = tenor_pair
-                    strategy.tenor_legs = tenor_legs
-                    strategy.strategy_type = self._classify_strategy_type(len(strategy.legs), tenor_pair)
+                    # Update instrument pair
+                    strategy.instrument_pair = instrument_pair
+                    strategy.instrument_legs = instrument_legs
+                    strategy.strategy_type = self._classify_strategy_type(len(strategy.legs), instrument_pair)
                 else:
                     # Create new strategy
                     strategy_id = f"CUST_{uuid.uuid4().hex[:8].upper()}"
                     strategy = Strategy(
                         strategy_id=strategy_id,
-                        strategy_type=self._classify_strategy_type(len(group_trades), tenor_pair),
+                        strategy_type=self._classify_strategy_type(len(group_trades), instrument_pair),
                         underlying_name=underlying,
                         legs=[t.dissemination_identifier for t in group_trades],
                         total_notional_eur=sum(t.notional_eur or 0.0 for t in group_trades),
                         execution_start=min(timestamps),
                         execution_end=max(timestamps),
                         package_transaction_price=None,
-                        tenor_pair=tenor_pair,
-                        tenor_legs=tenor_legs
+                        instrument_pair=instrument_pair,
+                        instrument_legs=instrument_legs
                     )
                     
                     self.custom_strategies[strategy_id] = strategy
@@ -239,45 +239,47 @@ class StrategyDetector:
         
         return new_strategies
     
-    def _extract_tenor_pair(self, strategy_trades: List[Trade]) -> tuple[Optional[str], Optional[List[str]]]:
+    def _extract_instrument_pair(self, strategy_trades: List[Trade]) -> tuple[Optional[str], Optional[List[str]]]:
         """
-        Extract tenor pair from strategy trades.
+        Extract instrument pair from strategy trades.
         
         Args:
             strategy_trades: List of Trade objects in the strategy
             
         Returns:
-            tuple: (tenor_pair_string, list_of_tenors)
+            tuple: (instrument_pair_string, list_of_instruments)
             Examples:
                 - 2 legs: ("10Y/30Y", ["10Y", "30Y"])
                 - 3 legs: ("2Y/5Y/10Y", ["2Y", "5Y", "10Y"])
                 - 4+ legs: ("2Y/5Y/10Y/30Y", ["2Y", "5Y", "10Y", "30Y"])
         """
-        # Extract tenors from trades
-        tenors = []
+        # Extract instruments from trades
+        instruments = []
         for trade in strategy_trades:
-            if trade.tenor:
-                tenors.append(trade.tenor)
+            if trade.instrument:
+                instruments.append(trade.instrument)
         
         # Remove duplicates and sort
-        unique_tenors = list(set(tenors))
-        if not unique_tenors:
+        unique_instruments = list(set(instruments))
+        if not unique_instruments:
             return None, None
         
-        # Sort by tenor order
-        tenor_order = ["3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"]
-        sorted_tenors = sorted(
-            unique_tenors,
-            key=lambda t: tenor_order.index(t) if t in tenor_order else 999
-        )
+        # Sort by instrument order (extract base tenor for sorting)
+        instrument_order = ["3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"]
+        def get_sort_key(instrument):
+            # Extract base instrument for sorting (e.g., "10Y" from "5Y10Y")
+            base = instrument.split('/')[0] if '/' in instrument else instrument
+            return instrument_order.index(base) if base in instrument_order else 999
+        
+        sorted_instruments = sorted(unique_instruments, key=get_sort_key)
         
         # Format as string
-        tenor_pair = "/".join(sorted_tenors)
+        instrument_pair = "/".join(sorted_instruments)
         
-        return tenor_pair, sorted_tenors
+        return instrument_pair, sorted_instruments
     
-    def _classify_strategy_type(self, num_legs: int, tenor_pair: Optional[str] = None) -> str:
-        """Classify strategy type based on number of legs and optionally add tenor info."""
+    def _classify_strategy_type(self, num_legs: int, instrument_pair: Optional[str] = None) -> str:
+        """Classify strategy type based on number of legs and optionally add instrument info."""
         if num_legs == 2:
             base_type = "Spread"
         elif num_legs == 3:
@@ -287,9 +289,9 @@ class StrategyDetector:
         else:
             base_type = "Package"
         
-        # Add tenor pair if available
-        if tenor_pair:
-            return f"{tenor_pair} {base_type}"
+        # Add instrument pair if available
+        if instrument_pair:
+            return f"{instrument_pair} {base_type}"
         return base_type
     
     def get_strategy_id_for_trade(self, trade_id: str) -> Optional[str]:
