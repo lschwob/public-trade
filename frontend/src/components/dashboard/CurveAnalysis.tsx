@@ -168,16 +168,16 @@ export default function CurveAnalysis({ curveMetrics, strategyMetrics }: CurveAn
         </div>
       </div>
 
-      {/* Most Popular Instrument Pairs */}
-      {strategyMetrics?.instrument_pair_distribution && strategyMetrics.instrument_pair_distribution.length > 0 && (
+      {/* Most Popular Instruments */}
+      {strategyMetrics?.instrument_distribution && strategyMetrics.instrument_distribution.length > 0 && (
         <>
           <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Most Popular Instrument Pairs</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Most Popular Instruments</h3>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={strategyMetrics.instrument_pair_distribution.slice(0, 10)}>
+              <BarChart data={strategyMetrics.instrument_distribution.slice(0, 10)}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 
-                  dataKey="instrument_pair" 
+                  dataKey="instrument" 
                   tick={{ fontSize: 12 }}
                   angle={-45}
                   textAnchor="end"
@@ -190,15 +190,15 @@ export default function CurveAnalysis({ curveMetrics, strategyMetrics }: CurveAn
             </ResponsiveContainer>
           </div>
 
-          {/* Instrument Pair Statistics Table */}
+          {/* Instrument Statistics Table */}
           <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Instrument Pair Statistics</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Instrument Statistics</h3>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Instrument Pair
+                      Instrument
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Count
@@ -212,19 +212,19 @@ export default function CurveAnalysis({ curveMetrics, strategyMetrics }: CurveAn
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {strategyMetrics.instrument_pair_distribution.map((pair) => (
-                    <tr key={pair.instrument_pair}>
+                  {strategyMetrics.instrument_distribution.map((item) => (
+                    <tr key={item.instrument}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {pair.instrument_pair}
+                        {item.instrument}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {pair.count}
+                        {item.count}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {formatNotional(pair.total_notional)}
+                        {formatNotional(item.total_notional)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {formatNotional(pair.avg_notional)}
+                        {formatNotional(item.avg_notional)}
                       </td>
                     </tr>
                   ))}

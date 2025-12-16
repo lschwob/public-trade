@@ -9,8 +9,7 @@
  * - Auto-scroll with highlighting for new trades
  * - Fixed column widths for consistent layout
  * 
- * The blotter only shows one trade per explicit group (grouped_trades),
- * but displays all individual trades separately.
+ * The blotter groups trades by strategy when available (from API pre-classification).
  */
 
 import { useState, useMemo, useEffect, useRef } from 'react';
@@ -57,7 +56,6 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
 
 export default function Blotter({ trades, strategies = [] }: BlotterProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [tenorPairFilter, setTenorPairFilter] = useState<string>('all');
   
   // Additional filters
   const [actionFilter, setActionFilter] = useState<string>('all');
@@ -112,14 +110,6 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
     Array.from(new Set(trades.map(t => t.platform_identifier).filter(Boolean))).sort(),
     [trades]
   );
-
-  // Get unique instrument pairs from strategies
-  const uniqueInstrumentPairs = useMemo(() => {
-    const pairs = Array.from(
-      new Set(strategies.map(s => s.instrument_pair).filter(Boolean))
-    ).sort();
-    return pairs;
-  }, [strategies]);
 
   // Filter trades
   const filteredTrades = useMemo(() => {
@@ -177,18 +167,9 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
       filtered = filtered.filter(t => t.platform_identifier === platformFilter);
     }
     
-    // Instrument Pair filter (existing)
-    if (tenorPairFilter !== 'all') {
-      filtered = filtered.filter(trade => {
-        if (!trade.strategy_id) return false;
-        const strategy = strategies.find(s => s.strategy_id === trade.strategy_id);
-        return strategy?.instrument_pair === tenorPairFilter;
-      });
-    }
-    
     return filtered;
   }, [trades, searchTerm, actionFilter, tenorFilter, forwardSpotFilter, 
-      strategyTypeFilter, platformFilter, tenorPairFilter, strategies]);
+      strategyTypeFilter, platformFilter, strategies]);
 
   // Calculate visible columns
   const visibleColumns = useMemo(() => {
@@ -272,28 +253,10 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
     const result: (Trade | { type: 'strategy'; strategy: Strategy; trades: Trade[] })[] = [];
     const processedStrategies = new Set<string>();
     
-    // First pass: identify all trades that are members of explicit groups (not the group leader)
-    const tradesInGroups = new Set<string>();
-    for (const trade of sorted) {
-      if (trade.grouped_trades && trade.grouped_trades.length > 0) {
-        // This trade is a group leader, mark all its grouped trades as "in a group"
-        trade.grouped_trades.forEach(gt => {
-          if (gt.dissemination_identifier !== trade.dissemination_identifier) {
-            tradesInGroups.add(gt.dissemination_identifier);
-          }
-        });
-      }
-    }
-    
-    // Second pass: process trades and group by strategy
+    // Process trades and group by strategy
     for (const trade of sorted) {
       // Skip if already shown
       if (shownTradeIds.has(trade.dissemination_identifier)) {
-        continue;
-      }
-      
-      // Skip if this trade is a member of another trade's explicit group
-      if (tradesInGroups.has(trade.dissemination_identifier)) {
         continue;
       }
       
@@ -304,8 +267,7 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
           // Find all trades in this strategy
           const strategyTrades = sorted.filter(t => 
             t.strategy_id === trade.strategy_id && 
-            !shownTradeIds.has(t.dissemination_identifier) &&
-            !tradesInGroups.has(t.dissemination_identifier)
+            !shownTradeIds.has(t.dissemination_identifier)
           );
           
           // Sort strategy trades by timestamp
@@ -325,25 +287,9 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
         }
       }
       
-      // Check if this trade is a group leader (has grouped_trades)
-      const hasGroupedTrades = trade.grouped_trades && trade.grouped_trades.length > 0;
-      
-      // If trade is a group leader, show it and mark all group members as shown
-      if (hasGroupedTrades) {
-        const groupIds = new Set(
-          trade.grouped_trades?.map(gt => gt.dissemination_identifier) || []
-        );
-        groupIds.add(trade.dissemination_identifier);
-        
-        result.push(trade);
-        // Mark all trades in this group as shown
-        groupIds.forEach(id => shownTradeIds.add(id));
-      }
-      // Otherwise, show the trade individually
-      else {
-        result.push(trade);
-        shownTradeIds.add(trade.dissemination_identifier);
-      }
+      // Show the trade individually
+      result.push(trade);
+      shownTradeIds.add(trade.dissemination_identifier)
     }
     
     // Re-sort result by timestamp (strategies use their first trade's timestamp)
@@ -450,20 +396,6 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
                 <option key={platform} value={platform}>{platform}</option>
               ))}
             </select>
-            
-            {/* Instrument Pair Filter (existing) */}
-            {uniqueInstrumentPairs.length > 0 && (
-              <select
-                value={tenorPairFilter}
-                onChange={(e) => setTenorPairFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-              >
-                <option value="all">All Instrument Pairs</option>
-                {uniqueInstrumentPairs.map(pair => (
-                  <option key={pair} value={pair}>{pair}</option>
-                ))}
-              </select>
-            )}
           </div>
         )}
         

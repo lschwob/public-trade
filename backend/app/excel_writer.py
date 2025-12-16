@@ -158,7 +158,7 @@ class ExcelWriter:
         """Initialize Strategies sheet headers."""
         headers = [
             "Strategy ID", "Type", "Underlying", "Nb Legs", "Total Notional EUR",
-            "Execution Start", "Execution End", "Package Price", "Instrument Pair"
+            "Execution Start", "Execution End", "Package Price"
         ]
         
         for col, header in enumerate(headers, 1):
@@ -271,7 +271,7 @@ class ExcelWriter:
         self.trades_sheet.cell(row=row, column=11, value=trade.spread_leg2)
         self.trades_sheet.cell(row=row, column=12, value=rate_display)
         self.trades_sheet.cell(row=row, column=13, value=trade.expiration_date or "")
-        self.trades_sheet.cell(row=row, column=14, value=trade.tenor or "")
+        self.trades_sheet.cell(row=row, column=14, value=trade.instrument or "")
         self.trades_sheet.cell(row=row, column=15, value=trade.platform_identifier or "")
         self.trades_sheet.cell(row=row, column=16, value=trade.strategy_id or "")
         self.trades_sheet.cell(row=row, column=17, value="Yes" if trade.package_indicator else "No")
@@ -292,7 +292,6 @@ class ExcelWriter:
                 self.strategies_sheet.cell(row=row, column=6, value=strategy.execution_start.strftime("%Y-%m-%d %H:%M:%S"))
                 self.strategies_sheet.cell(row=row, column=7, value=strategy.execution_end.strftime("%Y-%m-%d %H:%M:%S"))
                 self.strategies_sheet.cell(row=row, column=8, value=strategy.package_transaction_price or "")
-                self.strategies_sheet.cell(row=row, column=9, value=strategy.instrument_pair or "")
                 return
         
         # Add new strategy
@@ -305,7 +304,6 @@ class ExcelWriter:
         self.strategies_sheet.cell(row=row, column=6, value=strategy.execution_start.strftime("%Y-%m-%d %H:%M:%S"))
         self.strategies_sheet.cell(row=row, column=7, value=strategy.execution_end.strftime("%Y-%m-%d %H:%M:%S"))
         self.strategies_sheet.cell(row=row, column=8, value=strategy.package_transaction_price or "")
-        self.strategies_sheet.cell(row=row, column=9, value=strategy.tenor_pair or "")
     
     def _write_analytics(self, analytics: Analytics):
         """Write analytics summary to Analytics sheet."""

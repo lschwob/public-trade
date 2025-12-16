@@ -33,7 +33,6 @@ from app.config import MAX_TRADES_IN_BUFFER, POLL_INTERVAL
 from app.poller import Poller
 from app.excel_writer import ExcelWriter
 from app.alert_engine import AlertEngine
-from app.trade_grouper import TradeGrouper
 from app.analytics_engine import AnalyticsEngine
 from app.models import (
     Trade, Strategy, Alert, Analytics, CurveMetrics, FlowMetrics, RiskMetrics,
@@ -67,9 +66,6 @@ excel_writer = ExcelWriter()
 
 # Alert engine for EUR-based threshold alerts
 alert_engine = AlertEngine()
-
-# Trade grouper for grouping related trades
-trade_grouper = TradeGrouper()
 
 # Analytics engine for advanced metrics calculation
 analytics_engine = AnalyticsEngine()
@@ -170,9 +166,8 @@ async def process_trades(trades: List[Trade], strategies: List[Strategy] = None)
     3. Writes trades to Excel (via ExcelWriter)
     4. Processes pre-classified strategies from internal API
     5. Generates alerts (via AlertEngine, only for new trades)
-    6. Groups related trades (via TradeGrouper)
-    7. Updates daily statistics
-    8. Broadcasts updates via WebSocket
+    6. Updates daily statistics
+    7. Broadcasts updates via WebSocket
     
     Args:
         trades: List of new Trade objects from internal API
@@ -259,10 +254,6 @@ async def process_trades(trades: List[Trade], strategies: List[Strategy] = None)
         daily_stats["trades_per_hour"][hour_key] = \
             daily_stats["trades_per_hour"].get(hour_key, 0) + 1
     
-    # Group trades (include new trades and recent trades from buffer for better grouping)
-    all_trades_for_grouping = new_trades + [t for t in trade_buffer[-50:] if t not in new_trades]
-    trade_grouper.group_trades(all_trades_for_grouping)
-    
     # Process pre-classified strategies from internal API
     # Track existing strategy IDs before processing new ones
     existing_strategy_ids_before = set(tracked_strategies.keys())
@@ -296,7 +287,7 @@ async def process_trades(trades: List[Trade], strategies: List[Strategy] = None)
     # Check volume trend (only for new trades)
     await alert_engine.check_volume_trend(new_trades, only_new_trades=True)
     
-    # Broadcast new trades (with package legs and grouped trades if applicable)
+    # Broadcast new trades (with package legs if applicable)
     for trade in new_trades:
         trade_dict = trade.dict()
         
@@ -307,24 +298,9 @@ async def process_trades(trades: List[Trade], strategies: List[Strategy] = None)
                 trade_dict["package_legs"] = [leg.dict() for leg in package_legs[package_key]]
                 trade_dict["package_legs_count"] = len(package_legs[package_key])
         
-        # Add grouped trades (trades in the same group)
-        group_id = trade_grouper.get_group_id_for_trade(trade.dissemination_identifier)
-        if group_id:
-            group_trade_ids = trade_grouper.get_group_for_trade(trade.dissemination_identifier)
-            # Get actual trade objects from buffer
-            grouped_trades = [
-                t for t in trade_buffer 
-                if t.dissemination_identifier in group_trade_ids
-                and t.dissemination_identifier != trade.dissemination_identifier
-            ]
-            if grouped_trades:
-                trade_dict["grouped_trades"] = [t.dict() for t in grouped_trades]
-                trade_dict["grouped_trades_count"] = len(group_trade_ids)
-                trade_dict["group_id"] = group_id
-        
         await broadcast_message("new_trade", trade_dict)
     
-    # Also update existing trades in buffer that belong to the same package or group
+    # Also update existing trades in buffer that belong to the same package
     # But don't generate alerts for these updates
     for trade in trade_buffer:
         # Skip if this trade was just added (already processed)
@@ -340,21 +316,6 @@ async def process_trades(trades: List[Trade], strategies: List[Strategy] = None)
             if package_key in package_legs:
                 trade_dict["package_legs"] = [leg.dict() for leg in package_legs[package_key]]
                 trade_dict["package_legs_count"] = len(package_legs[package_key])
-                updated = True
-        
-        # Update grouped trades
-        group_id = trade_grouper.get_group_id_for_trade(trade.dissemination_identifier)
-        if group_id:
-            group_trade_ids = trade_grouper.get_group_for_trade(trade.dissemination_identifier)
-            grouped_trades = [
-                t for t in trade_buffer 
-                if t.dissemination_identifier in group_trade_ids
-                and t.dissemination_identifier != trade.dissemination_identifier
-            ]
-            if grouped_trades:
-                trade_dict["grouped_trades"] = [t.dict() for t in grouped_trades]
-                trade_dict["grouped_trades_count"] = len(group_trade_ids)
-                trade_dict["group_id"] = group_id
                 updated = True
         
         if updated:
@@ -562,7 +523,7 @@ async def websocket_endpoint(websocket: WebSocket):
         for trade in trade_buffer:
             alert_engine.alerted_trade_ids.add(trade.dissemination_identifier)
         
-        # Send initial state with package legs and grouped trades
+        # Send initial state with package legs
         initial_trades = []
         for trade in trade_buffer[-100:]:  # Last 100 trades
             trade_dict = trade.dict()
@@ -572,20 +533,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 if package_key in package_legs:
                     trade_dict["package_legs"] = [leg.dict() for leg in package_legs[package_key]]
                     trade_dict["package_legs_count"] = len(package_legs[package_key])
-            
-            # Add grouped trades
-            group_id = trade_grouper.get_group_id_for_trade(trade.dissemination_identifier)
-            if group_id:
-                group_trade_ids = trade_grouper.get_group_for_trade(trade.dissemination_identifier)
-                grouped_trades = [
-                    t for t in trade_buffer 
-                    if t.dissemination_identifier in group_trade_ids
-                    and t.dissemination_identifier != trade.dissemination_identifier
-                ]
-                if grouped_trades:
-                    trade_dict["grouped_trades"] = [t.dict() for t in grouped_trades]
-                    trade_dict["grouped_trades_count"] = len(group_trade_ids)
-                    trade_dict["group_id"] = group_id
             
             initial_trades.append(trade_dict)
         

@@ -100,58 +100,6 @@ def parse_date(date_str: str) -> Optional[datetime]:
         return None
 
 
-def calculate_tenor(effective_date: Optional[str], expiration_date: Optional[str]) -> Optional[str]:
-    """
-    Calculate tenor (maturity) from effective and expiration dates.
-    
-    Tenor is calculated as the time difference between effective and expiration dates,
-    rounded to standard market tenors (3M, 6M, 1Y, 2Y, 3Y, 5Y, 7Y, 10Y, 15Y, 20Y, 30Y).
-    
-    Args:
-        effective_date: Effective date of the swap (ISO string)
-        expiration_date: Expiration/maturity date of the swap (ISO string)
-        
-    Returns:
-        Tenor string (e.g., "2Y", "5Y", "10Y", "30Y+"), or None if calculation fails
-        
-    Examples:
-        >>> calculate_tenor("2024-01-01", "2026-01-01")
-        "2Y"
-        >>> calculate_tenor("2024-01-01", "2034-01-01")
-        "10Y"
-    """
-    if not effective_date or not expiration_date:
-        return None
-    
-    try:
-        eff = datetime.fromisoformat(effective_date)
-        exp = datetime.fromisoformat(expiration_date)
-        years = (exp - eff).days / 365.25
-        
-        if years < 1:
-            return f"{int(years * 12)}M"
-        elif years < 2:
-            return "1Y"
-        elif years < 3:
-            return "2Y"
-        elif years < 5:
-            return "3Y"
-        elif years < 7:
-            return "5Y"
-        elif years < 10:
-            return "7Y"
-        elif years < 15:
-            return "10Y"
-        elif years < 20:
-            return "15Y"
-        elif years < 30:
-            return "20Y"
-        else:
-            return "30Y+"
-    except (ValueError, TypeError):
-        return None
-
-
 def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime: Optional[str] = None, instrument: Optional[str] = None) -> Optional[Trade]:
     """
     Convert a LegAPI from new API to a Trade model.
@@ -175,9 +123,9 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
     """
     try:
         # Parse dates
-        effective_date_str = leg.Effectivedate
-        expiration_date_str = leg.Expirationdate
-        execution_timestamp_str = leg.Executiontime or leg.Eventtime or execution_datetime
+        effective_date_str = leg.effectiveDate
+        expiration_date_str = leg.expirationDate
+        execution_timestamp_str = leg.executionTime or leg.eventTime or execution_datetime
         
         effective_date_dt = None
         is_forward = False
@@ -198,23 +146,23 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
         execution_timestamp = parse_date(execution_timestamp_str) or datetime.utcnow()
         
         # Extract notional - use leg1, fallback to leg2
-        notional_leg1 = leg.Notionalamountleg1 or 0.0
-        notional_leg2 = leg.Notionalamountleg2 or notional_leg1
+        notional_leg1 = leg.notionalAmountLeg1 or 0.0
+        notional_leg2 = leg.notionalAmountLeg2 or notional_leg1
         
         # Extract rates
-        fixed_rate_leg1 = leg.Fixedrateleg1
-        fixed_rate_leg2 = leg.Fixedrateleg2
-        spread_leg1 = leg.Spreadleg1
-        spread_leg2 = leg.Spreadleg2
+        fixed_rate_leg1 = leg.fixedRateLeg1
+        fixed_rate_leg2 = leg.fixedRateLeg2
+        spread_leg1 = leg.spreadLeg1
+        spread_leg2 = leg.spreadLeg2
         
         # Extract identifier - convert to string if needed
         dissemination_id = None
         if leg.id is not None:
             dissemination_id = str(leg.id)
-        elif leg.Upifisn:
-            dissemination_id = str(leg.Upifisn)
-        elif leg.Upi:
-            dissemination_id = str(leg.Upi)
+        elif leg.upiIsin:
+            dissemination_id = str(leg.upiIsin)
+        elif leg.upi:
+            dissemination_id = str(leg.upi)
         
         if not dissemination_id:
             # Create a unique identifier based on leg data
@@ -222,8 +170,8 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
             leg_hash = hash(str(sorted(leg_dict.items())))
             dissemination_id = f"LEG_{abs(leg_hash)}"
         
-        # Extract underlying from Rateunderlier or Upi
-        underlying_name = leg.Rateunderlier or leg.Upi or "UNKNOWN"
+        # Extract underlying from rateUnderlier or upi
+        underlying_name = leg.rateUnderlier or leg.upi or "UNKNOWN"
         
         # Extract instrument (maturity of swap) - use instrument from strategy level
         # The instrument represents the maturity of the swap (e.g., "10Y", "5Y10Y")
@@ -253,12 +201,12 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
             fixed_rate_leg2=fixed_rate_leg2,
             spread_leg1=spread_leg1,
             spread_leg2=spread_leg2,
-            unique_product_identifier=leg.Upi or "UNKNOWN",
+            unique_product_identifier=leg.upi or "UNKNOWN",
             unique_product_identifier_short_name=None,
             unique_product_identifier_underlier_name=underlying_name,
-            platform_identifier=leg.platformcode or leg.Platformname,
-            package_indicator=leg.Packageindicator or False,
-            package_transaction_price=str(leg.Packagetransactionprice) if leg.Packagetransactionprice is not None else None,
+            platform_identifier=leg.platformCode or leg.platformName,
+            package_indicator=leg.packageIndicator or False,
+            package_transaction_price=str(leg.packageTransactionPrice) if leg.packageTransactionPrice is not None else None,
             strategy_id=strategy_id,
             notional_eur=notional_leg1 if notional_currency_leg1 == "EUR" else None,  # Simplified
             instrument=instrument,  # Passed from strategy level
@@ -278,7 +226,7 @@ def normalize_leg_to_trade(leg: Leg, strategy_id: Optional[str] = None, date_str
     - Date parsing and validation
     - Notional parsing
     - Rate parsing
-    - Tenor extraction or calculation
+    - Instrument extraction
     - Forward trade detection
     
     Args:
@@ -384,7 +332,7 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
     
     try:
         # Parse execution datetime
-        execution_datetime = response_data.executiondatetime
+        execution_datetime = response_data.executionDateTime
         
         # Convert each leg to a Trade
         leg_trades = []
@@ -397,40 +345,27 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
         # Create Strategy if there are legs
         if len(leg_trades) > 0:
             # Extract underlying name from strategy or first leg
-            underlying_name = response_data.Underlier or (leg_trades[0].unique_product_identifier_underlier_name if leg_trades else "Unknown")
+            underlying_name = response_data.underlier or (leg_trades[0].unique_product_identifier_underlier_name if leg_trades else "Unknown")
             
-            # Extract instruments from strategy and trades
-            instruments = []
-            
-            # Use instrument from strategy level (this is the maturity of the swap)
-            if response_data.instrument:
-                instruments.append(response_data.instrument)
-            
-            # Also get instruments from trades
-            trade_instruments = [t.instrument for t in leg_trades if t.instrument]
-            instruments.extend(trade_instruments)
-            
-            unique_instruments = sorted(list(set(instruments))) if instruments else []
-            instrument_pair = "/".join(unique_instruments) if unique_instruments else None
-            
-            # Classify strategy type based on leg count
-            num_legs = response_data.Legscount or len(leg_trades)
-            if num_legs == 1:
-                strategy_type = "Outright"
-            elif num_legs == 2:
-                strategy_type = "Spread"
-            elif num_legs == 3:
-                strategy_type = "Butterfly"
-            elif num_legs >= 4:
-                strategy_type = "Curve"
+            # Use product from API if available, otherwise classify based on leg count
+            if response_data.product:
+                strategy_type = response_data.product
             else:
-                strategy_type = "Package"
-            
-            if instrument_pair:
-                strategy_type = f"{instrument_pair} {strategy_type}"
+                # Fallback: Classify strategy type based on leg count
+                num_legs = response_data.legsCount or len(leg_trades)
+                if num_legs == 1:
+                    strategy_type = "Outright"
+                elif num_legs == 2:
+                    strategy_type = "Spread"
+                elif num_legs == 3:
+                    strategy_type = "Butterfly"
+                elif num_legs >= 4:
+                    strategy_type = "Curve"
+                else:
+                    strategy_type = "Package"
             
             # Calculate total notional
-            total_notional = response_data.Notional or response_data.Notionaltruncated
+            total_notional = response_data.notional or response_data.notionalTruncated
             if not total_notional:
                 total_notional = sum(t.notional_eur or t.notional_amount_leg1 for t in leg_trades)
             
@@ -451,9 +386,9 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
             # Handle None, NaN, and convert to string
             package_transaction_price = None
             for leg in response_data.legs:
-                if leg.Packagetransactionprice is not None:
+                if leg.packageTransactionPrice is not None:
                     # Convert to string, handling None/NaN
-                    price_val = leg.Packagetransactionprice
+                    price_val = leg.packageTransactionPrice
                     if price_val is not None:
                         package_transaction_price = str(price_val)
                         break
@@ -466,9 +401,7 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
                 total_notional_eur=total_notional,
                 execution_start=execution_start,
                 execution_end=execution_end,
-                package_transaction_price=package_transaction_price,
-                instrument_pair=instrument_pair,
-                instrument_legs=unique_instruments if unique_instruments else None
+                package_transaction_price=package_transaction_price
             )
         
     except Exception as e:
@@ -511,11 +444,6 @@ def convert_internal_api_response(response_data: InternalAPIResponse) -> Tuple[L
             # Extract underlying name from first leg
             underlying_name = leg_trades[0].unique_product_identifier_underlier_name or "Unknown"
             
-            # Extract instruments
-            instruments = [t.instrument for t in leg_trades if t.instrument]
-            unique_instruments = sorted(list(set(instruments))) if instruments else []
-            instrument_pair = "/".join(unique_instruments) if unique_instruments else None
-            
             # Classify strategy type
             num_legs = len(leg_trades)
             if num_legs == 2:
@@ -526,9 +454,6 @@ def convert_internal_api_response(response_data: InternalAPIResponse) -> Tuple[L
                 strategy_type = "Curve"
             else:
                 strategy_type = "Package"
-            
-            if instrument_pair:
-                strategy_type = f"{instrument_pair} {strategy_type}"
             
             # Calculate total notional
             total_notional = sum(t.notional_eur or t.notional_amount_leg1 for t in leg_trades)
@@ -541,9 +466,7 @@ def convert_internal_api_response(response_data: InternalAPIResponse) -> Tuple[L
                 total_notional_eur=total_notional,
                 execution_start=min(t.execution_timestamp for t in leg_trades),
                 execution_end=max(t.execution_timestamp for t in leg_trades),
-                package_transaction_price=None,
-                instrument_pair=instrument_pair,
-                instrument_legs=unique_instruments if unique_instruments else None
+                package_transaction_price=None
             )
         
     except Exception as e:

@@ -53,19 +53,8 @@ export default function StrategyRow({
   };
 
   const formatStrategyLabel = (strategy: Strategy): string => {
-    // Format instrument pair with 's' notation (10s30s instead of 10Y/30Y)
-    const instrumentPair = strategy.instrument_pair
-      ?.replace(/Y/g, 's')
-      .replace(/\//g, '');
-    
-    // Get strategy type base (Spread, Butterfly, Curve)
-    const baseType = strategy.strategy_type.split(' ').pop() || strategy.strategy_type;
-    
-    // Return formatted label
-    if (instrumentPair) {
-      return `${baseType} ${instrumentPair}`;
-    }
-    return baseType;
+    // Return strategy type directly from API (already formatted)
+    return strategy.strategy_type;
   };
 
   const getStrategyColor = (label: string) => {
@@ -123,9 +112,12 @@ export default function StrategyRow({
         );
       
       case 'tenor':
+        // Extract instrument from strategy type if present (e.g., "10Y/30Y Spread" -> "10Y/30Y")
+        const tenorMatch = strategy.strategy_type.match(/^([\dYM\/]+)\s/);
+        const tenor = tenorMatch ? tenorMatch[1] : '-';
         return (
           <div className="text-gray-600 text-xs">
-            {strategy.instrument_pair || '-'}
+            {tenor}
           </div>
         );
       
@@ -248,7 +240,6 @@ export default function StrategyRow({
               <div className="px-4 py-2 bg-purple-100 border-b border-purple-200">
                 <div className="text-sm font-semibold text-purple-900">
                   Strategy: {strategyLabel} ({trades.length} leg{trades.length > 1 ? 's' : ''})
-                  {strategy.instrument_pair && ` - ${strategy.instrument_pair}`}
                   {strategy.package_transaction_price && ` - Package: ${strategy.package_transaction_price}`}
                 </div>
                 <div className="text-xs text-purple-700 mt-1">
