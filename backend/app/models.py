@@ -50,28 +50,28 @@ class LegAPI(BaseModel):
     Represents a single leg with all its details from the new API format.
     """
     id: Optional[Union[str, int]] = None
-    Upifisn: Optional[str] = None
-    Upi: Optional[str] = None
-    Rateunderlier: Optional[str] = None
-    Eventtime: Optional[str] = None
-    Executiontime: Optional[str] = None
-    Effectivedate: Optional[str] = None
-    Expirationdate: Optional[str] = None
-    Notionalamountleg1: Optional[float] = None
-    Notionalamountleg2: Optional[float] = None
+    upifisn: Optional[str] = None
+    upi: Optional[str] = None
+    rateunderlier: Optional[str] = None
+    eventtime: Optional[str] = None
+    executiontime: Optional[str] = None
+    effectivedate: Optional[str] = None
+    expirationdate: Optional[str] = None
+    notionalamountleg1: Optional[float] = None
+    notionalamountleg2: Optional[float] = None
     platformcode: Optional[str] = None
-    Platformname: Optional[str] = None
-    Fixedrateleg1: Optional[float] = None
-    Fixedrateleg2: Optional[float] = None
-    Spreadleg1: Optional[float] = None
-    Spreadleg2: Optional[float] = None
-    Packageindicator: Optional[bool] = None
-    Packagetransactionprice: Optional[Union[str, float, int]] = None
-    Packagespread: Optional[float] = None
-    Tenorleg1: Optional[str] = None
-    Tenorleg2: Optional[str] = None
+    platformname: Optional[str] = None
+    fixedrateleg1: Optional[float] = None
+    fixedrateleg2: Optional[float] = None
+    spreadleg1: Optional[float] = None
+    spreadleg2: Optional[float] = None
+    packageindicator: Optional[bool] = None
+    packagetransactionprice: Optional[Union[str, float, int]] = None
+    packagespread: Optional[float] = None
+    tenorleg1: Optional[str] = None
+    tenorleg2: Optional[str] = None
     
-    @validator('Packagetransactionprice', pre=True)
+    @validator('packagetransactionprice', pre=True)
     def handle_nan_package_price(cls, v):
         """Convert NaN, None, or empty values to None."""
         if v is None:
@@ -82,8 +82,8 @@ class LegAPI(BaseModel):
             return None
         return str(v) if v is not None else None
     
-    @validator('Notionalamountleg1', 'Notionalamountleg2', 'Fixedrateleg1', 'Fixedrateleg2', 
-               'Spreadleg1', 'Spreadleg2', 'Packagespread', pre=True)
+    @validator('notionalamountleg1', 'notionalamountleg2', 'fixedrateleg1', 'fixedrateleg2', 
+               'spreadleg1', 'spreadleg2', 'packagespread', pre=True)
     def handle_nan_numeric(cls, v):
         """Convert NaN or inf values to None."""
         if v is None:
@@ -128,16 +128,16 @@ class StrategyAPIResponse(BaseModel):
     id: Union[str, int]
     executiondatetime: Optional[str] = None
     price: Optional[float] = None
-    Ironprice: Optional[float] = None
-    Product: Optional[str] = None
-    Underlier: Optional[str] = None
-    Tenor: Optional[str] = None
+    ironprice: Optional[float] = None
+    product: Optional[str] = None
+    underlier: Optional[str] = None
+    tenor: Optional[str] = None
     instrument: Optional[str] = None
-    Legscount: Optional[int] = None
-    Notional: Optional[float] = None
-    Notionaltruncated: Optional[float] = None
-    Platform: Optional[str] = None
-    D2c: Optional[bool] = None
+    legscount: Optional[int] = None
+    notional: Optional[float] = None
+    notionaltruncated: Optional[float] = None
+    platform: Optional[str] = None
+    d2c: Optional[bool] = None
     legs: List[LegAPI] = []
     
     @validator('id', pre=True)
@@ -145,7 +145,7 @@ class StrategyAPIResponse(BaseModel):
         """Convert id to string regardless of input type."""
         return str(v) if v is not None else None
     
-    @validator('price', 'Ironprice', 'Notional', 'Notionaltruncated', pre=True)
+    @validator('price', 'ironprice', 'notional', 'notionaltruncated', pre=True)
     def handle_nan_numeric(cls, v):
         """Convert NaN or inf values to None."""
         if v is None:

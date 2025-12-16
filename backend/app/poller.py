@@ -123,9 +123,9 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
     """
     try:
         # Parse dates
-        effective_date_str = leg.Effectivedate
-        expiration_date_str = leg.Expirationdate
-        execution_timestamp_str = leg.Executiontime or leg.Eventtime or execution_datetime
+        effective_date_str = leg.effectivedate
+        expiration_date_str = leg.expirationdate
+        execution_timestamp_str = leg.executiontime or leg.eventtime or execution_datetime
         
         effective_date_dt = None
         is_forward = False
@@ -146,23 +146,23 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
         execution_timestamp = parse_date(execution_timestamp_str) or datetime.utcnow()
         
         # Extract notional - use leg1, fallback to leg2
-        notional_leg1 = leg.Notionalamountleg1 or 0.0
-        notional_leg2 = leg.Notionalamountleg2 or notional_leg1
+        notional_leg1 = leg.notionalamountleg1 or 0.0
+        notional_leg2 = leg.notionalamountleg2 or notional_leg1
         
         # Extract rates
-        fixed_rate_leg1 = leg.Fixedrateleg1
-        fixed_rate_leg2 = leg.Fixedrateleg2
-        spread_leg1 = leg.Spreadleg1
-        spread_leg2 = leg.Spreadleg2
+        fixed_rate_leg1 = leg.fixedrateleg1
+        fixed_rate_leg2 = leg.fixedrateleg2
+        spread_leg1 = leg.spreadleg1
+        spread_leg2 = leg.spreadleg2
         
         # Extract identifier - convert to string if needed
         dissemination_id = None
         if leg.id is not None:
             dissemination_id = str(leg.id)
-        elif leg.Upifisn:
-            dissemination_id = str(leg.Upifisn)
-        elif leg.Upi:
-            dissemination_id = str(leg.Upi)
+        elif leg.upifisn:
+            dissemination_id = str(leg.upifisn)
+        elif leg.upi:
+            dissemination_id = str(leg.upi)
         
         if not dissemination_id:
             # Create a unique identifier based on leg data
@@ -170,8 +170,8 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
             leg_hash = hash(str(sorted(leg_dict.items())))
             dissemination_id = f"LEG_{abs(leg_hash)}"
         
-        # Extract underlying from Rateunderlier or Upi
-        underlying_name = leg.Rateunderlier or leg.Upi or "UNKNOWN"
+        # Extract underlying from rateunderlier or upi
+        underlying_name = leg.rateunderlier or leg.upi or "UNKNOWN"
         
         # Extract instrument (maturity of swap) - use instrument from strategy level
         # The instrument represents the maturity of the swap (e.g., "10Y", "5Y10Y")
@@ -201,12 +201,12 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
             fixed_rate_leg2=fixed_rate_leg2,
             spread_leg1=spread_leg1,
             spread_leg2=spread_leg2,
-            unique_product_identifier=leg.Upi or "UNKNOWN",
+            unique_product_identifier=leg.upi or "UNKNOWN",
             unique_product_identifier_short_name=None,
             unique_product_identifier_underlier_name=underlying_name,
-            platform_identifier=leg.platformcode or leg.Platformname,
-            package_indicator=leg.Packageindicator or False,
-            package_transaction_price=str(leg.Packagetransactionprice) if leg.Packagetransactionprice is not None else None,
+            platform_identifier=leg.platformcode or leg.platformname,
+            package_indicator=leg.packageindicator or False,
+            package_transaction_price=str(leg.packagetransactionprice) if leg.packagetransactionprice is not None else None,
             strategy_id=strategy_id,
             notional_eur=notional_leg1 if notional_currency_leg1 == "EUR" else None,  # Simplified
             instrument=instrument,  # Passed from strategy level
@@ -345,14 +345,14 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
         # Create Strategy if there are legs
         if len(leg_trades) > 0:
             # Extract underlying name from strategy or first leg
-            underlying_name = response_data.Underlier or (leg_trades[0].unique_product_identifier_underlier_name if leg_trades else "Unknown")
+            underlying_name = response_data.underlier or (leg_trades[0].unique_product_identifier_underlier_name if leg_trades else "Unknown")
             
-            # Use Product from API if available, otherwise classify based on leg count
-            if response_data.Product:
-                strategy_type = response_data.Product
+            # Use product from API if available, otherwise classify based on leg count
+            if response_data.product:
+                strategy_type = response_data.product
             else:
                 # Fallback: Classify strategy type based on leg count
-                num_legs = response_data.Legscount or len(leg_trades)
+                num_legs = response_data.legscount or len(leg_trades)
                 if num_legs == 1:
                     strategy_type = "Outright"
                 elif num_legs == 2:
@@ -365,7 +365,7 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
                     strategy_type = "Package"
             
             # Calculate total notional
-            total_notional = response_data.Notional or response_data.Notionaltruncated
+            total_notional = response_data.notional or response_data.notionaltruncated
             if not total_notional:
                 total_notional = sum(t.notional_eur or t.notional_amount_leg1 for t in leg_trades)
             
@@ -386,9 +386,9 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
             # Handle None, NaN, and convert to string
             package_transaction_price = None
             for leg in response_data.legs:
-                if leg.Packagetransactionprice is not None:
+                if leg.packagetransactionprice is not None:
                     # Convert to string, handling None/NaN
-                    price_val = leg.Packagetransactionprice
+                    price_val = leg.packagetransactionprice
                     if price_val is not None:
                         package_transaction_price = str(price_val)
                         break
