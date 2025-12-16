@@ -28,10 +28,11 @@ def parse_notional(notional_str) -> float:
     Parse notional string to float, handling various formats.
     
     Handles strings with commas, spaces, and trailing '+' signs (e.g., "650,000,000+").
+    Also handles abbreviated formats like "20M", "2B", "150M", "1.5B".
     Also handles numeric types directly.
     
     Args:
-        notional_str: Notional value as string (e.g., "300,000,000" or "650,000,000+")
+        notional_str: Notional value as string (e.g., "300,000,000", "650,000,000+", "20M", "2B")
                      or as numeric type
         
     Returns:
@@ -42,6 +43,12 @@ def parse_notional(notional_str) -> float:
         300000000.0
         >>> parse_notional("650,000,000+")
         650000000.0
+        >>> parse_notional("20M")
+        20000000.0
+        >>> parse_notional("2B")
+        2000000000.0
+        >>> parse_notional("1.5B")
+        1500000000.0
         >>> parse_notional(1000000)
         1000000.0
     """
@@ -50,12 +57,26 @@ def parse_notional(notional_str) -> float:
     # Handle string or number
     if isinstance(notional_str, (int, float)):
         return float(notional_str)
-    # Remove commas, whitespace, and trailing + sign
-    cleaned = str(notional_str).strip().replace(",", "").replace(" ", "").rstrip("+")
+    
+    # Convert to string and clean
+    cleaned = str(notional_str).strip().replace(",", "").replace(" ", "").rstrip("+").upper()
     if not cleaned or cleaned == "":
         return 0.0
+    
     try:
-        return float(cleaned)
+        # Check for abbreviated formats (M = millions, B = billions, K = thousands)
+        multiplier = 1.0
+        if cleaned.endswith('B'):
+            multiplier = 1_000_000_000
+            cleaned = cleaned[:-1]
+        elif cleaned.endswith('M'):
+            multiplier = 1_000_000
+            cleaned = cleaned[:-1]
+        elif cleaned.endswith('K'):
+            multiplier = 1_000
+            cleaned = cleaned[:-1]
+        
+        return float(cleaned) * multiplier
     except (ValueError, TypeError):
         logger.warning(f"Could not parse notional: {notional_str}")
         return 0.0
@@ -146,6 +167,7 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
         execution_timestamp = parse_date(execution_timestamp_str) or datetime.utcnow()
         
         # Extract notional - use leg1, fallback to leg2
+        # Parse string formats if needed (already handled by validator, but ensure it's a number)
         notional_leg1 = leg.notionalAmountLeg1 or 0.0
         notional_leg2 = leg.notionalAmountLeg2 or notional_leg1
         
@@ -262,7 +284,8 @@ def normalize_leg_to_trade(leg: Leg, strategy_id: Optional[str] = None, date_str
         execution_timestamp = parse_date(execution_timestamp_str) or datetime.utcnow()
         
         # Extract notional - try different possible field names
-        notional = leg.notional_amount or 0.0
+        # Parse string formats if needed
+        notional = parse_notional(leg.notional_amount) if leg.notional_amount else 0.0
         notional_currency = leg.notional_currency or "EUR"
         
         # Extract rates
@@ -365,6 +388,7 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
                     strategy_type = "Package"
             
             # Calculate total notional
+            # Parse string formats if needed (already handled by validator)
             total_notional = response_data.notional or response_data.notionalTruncated
             if not total_notional:
                 total_notional = sum(t.notional_eur or t.notional_amount_leg1 for t in leg_trades)
