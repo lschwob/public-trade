@@ -129,9 +129,12 @@ function StrategyRowComponent({
           .filter((r): r is number => r !== undefined && r !== null)
           .reduce((sum, r, _, arr) => sum + r / arr.length, 0);
         
+        // Check if rate is already in percentage or in decimal
+        const displayRate = Math.abs(avgRate) > 1 ? avgRate : avgRate * 100;
+        
         return (
           <div className="text-gray-700 font-mono text-xs">
-            {avgRate > 0 ? `${(avgRate * 100).toFixed(4)}%` : '-'}
+            {avgRate !== 0 ? `${displayRate.toFixed(4)}%` : '-'}
           </div>
         );
       

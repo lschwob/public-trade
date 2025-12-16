@@ -66,7 +66,12 @@ function TradeRowComponent({
 
   const formatRate = () => {
     if (trade.fixed_rate_leg1 !== undefined && trade.fixed_rate_leg1 !== null) {
-      return `${(trade.fixed_rate_leg1 * 100).toFixed(4)}%`;
+      // Check if rate is already in percentage (> 1) or in decimal (< 1)
+      // If rate > 1, it's already a percentage (e.g., 3.5 = 3.5%)
+      // If rate < 1, it's a decimal (e.g., 0.035 = 3.5%)
+      const rate = trade.fixed_rate_leg1;
+      const displayRate = Math.abs(rate) > 1 ? rate : rate * 100;
+      return `${displayRate.toFixed(4)}%`;
     } else if (trade.spread_leg2 !== undefined && trade.spread_leg2 !== null) {
       return `Spread: ${trade.spread_leg2}`;
     }
@@ -310,7 +315,7 @@ function TradeRowComponent({
                       <div className="col-span-2">
                         <span className="font-semibold text-gray-700">Rate:</span>
                         <div className="text-gray-600 mt-1 font-mono">
-                          {leg.fixed_rate_leg1 ? `${(leg.fixed_rate_leg1 * 100).toFixed(4)}%` : '-'}
+                          {leg.fixed_rate_leg1 ? `${(Math.abs(leg.fixed_rate_leg1) > 1 ? leg.fixed_rate_leg1 : leg.fixed_rate_leg1 * 100).toFixed(4)}%` : '-'}
                         </div>
                       </div>
                       <div className="col-span-2">

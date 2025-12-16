@@ -43,7 +43,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'action', label: 'Action', visible: true, width: 90 },
   { id: 'underlying', label: 'Underlying', visible: true, width: 200 },
   { id: 'notional', label: 'Notional', visible: true, width: 140 },
-  { id: 'tenor', label: 'Tenor', visible: true, width: 80 },
+  { id: 'tenor', label: 'Instrument', visible: true, width: 100 },  // Renamed from "Tenor" to "Instrument"
   { id: 'rate', label: 'Rate', visible: true, width: 120 },
   { id: 'package', label: 'Package', visible: true, width: 100 },
   { id: 'strategy', label: 'Strategy', visible: true, width: 220 },
@@ -74,6 +74,8 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
   });
   const [showColumnSelector, setShowColumnSelector] = useState(false);
   const prevTradesLengthRef = useRef(0);
+  const [draggedColumn, setDraggedColumn] = useState<number | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<number | null>(null);
 
   // Save columns to localStorage when changed
   useEffect(() => {
@@ -214,6 +216,28 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
       return next;
     });
   }, []);
+
+  // Drag & Drop handlers for columns
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    setDraggedColumn(index);
+    e.dataTransfer.effectAllowed = 'move';
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDragOverColumn(index);
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    if (draggedColumn !== null && dragOverColumn !== null && draggedColumn !== dragOverColumn) {
+      const newColumns = [...columns];
+      const [removed] = newColumns.splice(draggedColumn, 1);
+      newColumns.splice(dragOverColumn, 0, removed);
+      setColumns(newColumns);
+    }
+    setDraggedColumn(null);
+    setDragOverColumn(null);
+  }, [draggedColumn, dragOverColumn, columns]);
 
   // Group trades by strategy
   const tradesByStrategy = useMemo(() => {
@@ -425,13 +449,25 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
               </colgroup>
               <thead>
                 <tr>
-                  {visibleColumns.map(col => (
+                  {visibleColumns.map((col, index) => (
                     <th
                       key={col.id}
-                      className="px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide border-r border-gray-300 bg-gray-100 overflow-hidden"
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, index)}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDragEnd={handleDragEnd}
+                      className={`px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide border-r border-gray-300 bg-gray-100 overflow-hidden cursor-move transition-all ${
+                        draggedColumn === index ? 'opacity-50' : ''
+                      } ${
+                        dragOverColumn === index && draggedColumn !== index ? 'border-l-4 border-l-blue-500' : ''
+                      }`}
                       style={{ width: `${col.width}px`, maxWidth: `${col.width}px` }}
+                      title="Drag to reorder columns"
                     >
-                      <div className="truncate">{col.label}</div>
+                      <div className="truncate flex items-center gap-1">
+                        <span className="text-gray-400">⋮⋮</span>
+                        {col.label}
+                      </div>
                     </th>
                   ))}
                 </tr>
