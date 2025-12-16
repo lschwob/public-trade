@@ -141,7 +141,7 @@ export default function TradeRow({
       case 'tenor':
         return (
           <div className="text-gray-600 text-xs">
-            {trade.tenor || '-'}
+            {trade.instrument || '-'}
           </div>
         );
       
@@ -201,8 +201,8 @@ export default function TradeRow({
             return 'Outright';
           }
           
-          // Format tenor pair with 's' notation (10s30s instead of 10Y/30Y)
-          const tenorPair = strategy.tenor_pair
+          // Format instrument pair with 's' notation (10s30s instead of 10Y/30Y)
+          const instrumentPair = strategy.instrument_pair
             ?.replace(/Y/g, 's')
             .replace(/\//g, '');
           
@@ -210,8 +210,8 @@ export default function TradeRow({
           const baseType = strategy.strategy_type.split(' ').pop() || strategy.strategy_type;
           
           // Return formatted label
-          if (tenorPair) {
-            return `${baseType} ${tenorPair}`;
+          if (instrumentPair) {
+            return `${baseType} ${instrumentPair}`;
           }
           return baseType;
         };
@@ -333,8 +333,8 @@ export default function TradeRow({
                         </div>
                       </div>
                       <div className="col-span-2">
-                        <span className="font-semibold text-gray-700">Tenor:</span>
-                        <div className="text-gray-600 mt-1">{groupedTrade.tenor || '-'}</div>
+                        <span className="font-semibold text-gray-700">Instrument:</span>
+                        <div className="text-gray-600 mt-1">{groupedTrade.instrument || '-'}</div>
                       </div>
                       <div className="col-span-2">
                         <span className="font-semibold text-gray-700">Rate:</span>
@@ -386,8 +386,8 @@ export default function TradeRow({
                         </div>
                       </div>
                       <div className="col-span-2">
-                        <span className="font-semibold text-gray-700">Tenor:</span>
-                        <div className="text-gray-600 mt-1">{leg.tenor || '-'}</div>
+                        <span className="font-semibold text-gray-700">Instrument:</span>
+                        <div className="text-gray-600 mt-1">{leg.instrument || '-'}</div>
                       </div>
                       <div className="col-span-2">
                         <span className="font-semibold text-gray-700">Rate:</span>

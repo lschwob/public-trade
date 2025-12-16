@@ -34,7 +34,7 @@ class Leg(BaseModel):
     spread: Optional[float] = None
     effective_date: Optional[str] = None
     expiration_date: Optional[str] = None
-    tenor: Optional[str] = None
+    instrument: Optional[str] = None
     underlying_name: Optional[str] = None
     execution_timestamp: Optional[str] = None
     
@@ -192,7 +192,7 @@ class Trade(BaseModel):
         package_transaction_price: Package transaction price (used for grouping)
         strategy_id: Detected strategy ID (if part of a multi-leg strategy)
         notional_eur: Notional amount converted to EUR
-        tenor: Calculated tenor (e.g., "2Y", "5Y", "10Y", "30Y")
+        instrument: Instrument (maturity of swap, e.g., "10Y", "5Y10Y", "30Y")
     """
     dissemination_identifier: str
     original_dissemination_identifier: Optional[str] = None
@@ -236,7 +236,7 @@ class Trade(BaseModel):
     
     # Computed fields
     notional_eur: Optional[float] = None
-    tenor: Optional[str] = None  # e.g., "2Y", "5Y", "10Y"
+    instrument: Optional[str] = None  # e.g., "10Y", "5Y10Y", "30Y"
     
     class Config:
         json_encoders = {
@@ -260,8 +260,8 @@ class Strategy(BaseModel):
         execution_start: Timestamp of the first leg execution
         execution_end: Timestamp of the last leg execution
         package_transaction_price: Package price if applicable
-        tenor_pair: Formatted tenor pair (e.g., "10Y/30Y" for a spread)
-        tenor_legs: List of individual tenors in the strategy (e.g., ["10Y", "30Y"])
+        instrument_pair: Formatted instrument pair (e.g., "10Y/30Y" for a spread)
+        instrument_legs: List of individual instruments in the strategy (e.g., ["10Y", "30Y"])
     """
     strategy_id: str
     strategy_type: str  # Spread, Butterfly, Curve
@@ -272,9 +272,9 @@ class Strategy(BaseModel):
     execution_end: datetime
     package_transaction_price: Optional[str] = None
     
-    # Tenor pair information
-    tenor_pair: Optional[str] = None  # "10Y/30Y", "2Y/5Y/10Y", etc.
-    tenor_legs: Optional[List[str]] = None  # ["10Y", "30Y"]
+    # Instrument pair information
+    instrument_pair: Optional[str] = None  # "10Y/30Y", "2Y/5Y/10Y", etc.
+    instrument_legs: Optional[List[str]] = None  # ["10Y", "30Y"]
 
 
 class Alert(BaseModel):
@@ -306,10 +306,10 @@ class Alert(BaseModel):
 
 class CurveMetrics(BaseModel):
     """Curve analysis metrics."""
-    tenor_distribution: List[dict]  # [{"tenor": str, "notional": float, "count": int, "avg_rate": float}]
+    instrument_distribution: List[dict]  # [{"instrument": str, "notional": float, "count": int, "avg_rate": float}]
     rate_evolution: List[dict]  # [{"timestamp": str, "2Y": float, "5Y": float, "10Y": float, "30Y": float}]
-    tenor_spread: Dict[str, float]  # {"10Y-2Y": float, "30Y-10Y": float}
-    average_rate_by_tenor: Dict[str, float]  # {"2Y": float, "5Y": float, ...}
+    instrument_spread: Dict[str, float]  # {"10Y-2Y": float, "30Y-10Y": float}
+    average_rate_by_instrument: Dict[str, float]  # {"2Y": float, "5Y": float, ...}
 
 
 class FlowMetrics(BaseModel):
@@ -343,15 +343,15 @@ class RealTimeMetrics(BaseModel):
 class CurrencyMetrics(BaseModel):
     """Currency breakdown metrics."""
     currency_breakdown: List[dict]  # [{"currency": str, "notional": float, "count": int}]
-    currency_heatmap: List[dict]  # [{"tenor": str, "currency": str, "notional": float}]
+    currency_heatmap: List[dict]  # [{"instrument": str, "currency": str, "notional": float}]
 
 
 class StrategyMetrics(BaseModel):
     """Strategy intelligence."""
     strategy_avg_notional: List[dict]  # [{"type": str, "avg_notional": float}]
-    strategy_tenor_preference: List[dict]  # [{"type": str, "tenors": List[str]}]
+    strategy_instrument_preference: List[dict]  # [{"type": str, "instruments": List[str]}]
     package_vs_custom: Dict[str, int]  # {"package": count, "custom": count}
-    tenor_pair_distribution: List[dict]  # [{"tenor_pair": "10Y/30Y", "count": 5, "total_notional": 1000000000, "avg_notional": 200000000}]
+    instrument_pair_distribution: List[dict]  # [{"instrument_pair": "10Y/30Y", "count": 5, "total_notional": 1000000000, "avg_notional": 200000000}]
 
 
 class Analytics(BaseModel):
@@ -378,9 +378,9 @@ class Analytics(BaseModel):
 # Pro Trader Metrics Models for EUR IRS Market Makers
 # ============================================================================
 
-class TenorDetail(BaseModel):
-    """Detailed metrics for a specific tenor in EUR IRS."""
-    tenor: str  # "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"
+class InstrumentDetail(BaseModel):
+    """Detailed metrics for a specific instrument in EUR IRS."""
+    instrument: str  # "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y", "5Y10Y", etc.
     high: Optional[float] = None  # Highest rate in window (%)
     low: Optional[float] = None  # Lowest rate in window
     mid: Optional[float] = None  # Average rate
@@ -417,17 +417,17 @@ class ProFlowMetrics(BaseModel):
     net_flow_direction: str  # "BUY_PRESSURE" | "SELL_PRESSURE" | "BALANCED"
     flow_intensity: float  # Score 0-100
     buy_volume_ratio: float  # Ratio of buy volume vs sell (0-1)
-    dominant_tenor: str  # Tenor with most volume
+    dominant_instrument: str  # Instrument with most volume
     new_trades_count: int  # Number of NEWT in period
     large_block_count: int  # Number of trades >500M EUR
-    flow_by_tenor: Dict[str, str]  # Flow direction per tenor
+    flow_by_instrument: Dict[str, str]  # Flow direction per instrument
 
 
 class VolatilityMetrics(BaseModel):
     """Volatility metrics for EUR IRS."""
     realized_volatility: float  # Realized volatility (annualized)
-    rate_velocity: Dict[str, float]  # Rate velocity (bps/min) per tenor
-    volatility_by_tenor: Dict[str, float]  # Volatility per tenor
+    rate_velocity: Dict[str, float]  # Rate velocity (bps/min) per instrument
+    volatility_by_instrument: Dict[str, float]  # Volatility per instrument
     volatility_percentile: float  # Percentile vs 30d history
 
 
@@ -449,20 +449,20 @@ class PriceImpactMetrics(BaseModel):
 
 class ForwardCurveMetrics(BaseModel):
     """Forward curve analysis metrics."""
-    forward_rates: Dict[str, float]  # Forward rates by tenor
+    forward_rates: Dict[str, float]  # Forward rates by instrument
     spot_vs_forward: Dict[str, float]  # Spot vs forward spread (bps)
     curve_shape: str  # "NORMAL" | "INVERTED" | "FLAT" | "STEEP"
-    basis_swaps: Dict[str, float]  # Tenor basis analysis
+    basis_swaps: Dict[str, float]  # Instrument basis analysis
 
 
 class HistoricalContext(BaseModel):
     """Historical context for comparison."""
-    percentile_30d: Dict[str, float]  # Percentile vs 30 days
-    percentile_90d: Dict[str, float]  # Percentile vs 90 days
-    z_score: Dict[str, float]  # Z-score vs historical mean
-    avg_30d: Dict[str, float]  # 30-day average
-    avg_90d: Dict[str, float]  # 90-day average
-    deviation_from_avg: Dict[str, float]  # Deviation from average (bps)
+    percentile_30d: Dict[str, float]  # Percentile vs 30 days (by instrument)
+    percentile_90d: Dict[str, float]  # Percentile vs 90 days (by instrument)
+    z_score: Dict[str, float]  # Z-score vs historical mean (by instrument)
+    avg_30d: Dict[str, float]  # 30-day average (by instrument)
+    avg_90d: Dict[str, float]  # 90-day average (by instrument)
+    deviation_from_avg: Dict[str, float]  # Deviation from average (bps, by instrument)
 
 
 class ProAlert(BaseModel):
@@ -470,7 +470,7 @@ class ProAlert(BaseModel):
     alert_id: str
     alert_type: str  # "ABNORMAL_SPREAD" | "LARGE_BLOCK" | "CURVE_INVERSION" | "VOLATILITY_SPIKE"
     severity: str  # "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
-    tenor: Optional[str] = None
+    instrument: Optional[str] = None
     current_value: float
     threshold: float
     timestamp: datetime
@@ -480,7 +480,7 @@ class ProAlert(BaseModel):
 class ProTraderMetrics(BaseModel):
     """Complete pro trader metrics container."""
     time_window: int  # Window in minutes
-    tenor_metrics: Dict[str, TenorDetail]
+    instrument_metrics: Dict[str, InstrumentDetail]
     spread_metrics: SpreadMetrics
     flow_metrics: ProFlowMetrics
     volatility_metrics: VolatilityMetrics
@@ -493,7 +493,7 @@ class ProTraderMetrics(BaseModel):
 
 class ProTraderDelta(BaseModel):
     """Delta comparison between two time periods."""
-    tenor_deltas: Dict[str, Dict[str, float]]  # {tenor: {mid_change, volume_change, spread_change}}
+    instrument_deltas: Dict[str, Dict[str, float]]  # {instrument: {mid_change, volume_change, spread_change}}
     spread_deltas: Dict[str, float]  # Spread changes in bps
     flow_delta: Dict[str, Any]  # Flow direction and intensity changes
 

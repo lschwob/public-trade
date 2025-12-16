@@ -152,7 +152,7 @@ def calculate_tenor(effective_date: Optional[str], expiration_date: Optional[str
         return None
 
 
-def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime: Optional[str] = None) -> Optional[Trade]:
+def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime: Optional[str] = None, instrument: Optional[str] = None) -> Optional[Trade]:
     """
     Convert a LegAPI from new API to a Trade model.
     
@@ -161,13 +161,14 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
     - Date parsing and validation
     - Notional parsing
     - Rate parsing
-    - Tenor extraction
+    - Instrument extraction (maturity of swap)
     - Forward trade detection
     
     Args:
         leg: LegAPI object from new API
         strategy_id: Strategy ID this leg belongs to
         execution_datetime: Execution datetime from parent strategy
+        instrument: Instrument (maturity of swap) from strategy level
         
     Returns:
         Normalized Trade object, or None if normalization fails
@@ -224,10 +225,10 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
         # Extract underlying from Rateunderlier or Upi
         underlying_name = leg.Rateunderlier or leg.Upi or "UNKNOWN"
         
-        # Extract tenor
-        tenor = leg.Tenorleg1 or leg.Tenorleg2
-        if not tenor and effective_date_str and expiration_date_str:
-            tenor = calculate_tenor(effective_date_str, expiration_date_str)
+        # Extract instrument (maturity of swap) - use instrument from strategy level
+        # The instrument represents the maturity of the swap (e.g., "10Y", "5Y10Y")
+        # It comes from the strategy level, not from individual legs
+        # instrument parameter is passed from convert_strategy_api_response
         
         # Determine currency (default to EUR if not specified)
         # In the new API, we might need to infer from context
@@ -260,7 +261,7 @@ def normalize_leg_api_to_trade(leg: LegAPI, strategy_id: str, execution_datetime
             package_transaction_price=str(leg.Packagetransactionprice) if leg.Packagetransactionprice is not None else None,
             strategy_id=strategy_id,
             notional_eur=notional_leg1 if notional_currency_leg1 == "EUR" else None,  # Simplified
-            tenor=tenor,
+            instrument=instrument,  # Passed from strategy level
             is_forward=is_forward
         )
     except Exception as e:
@@ -356,7 +357,7 @@ def normalize_leg_to_trade(leg: Leg, strategy_id: Optional[str] = None, date_str
             package_transaction_price=None,
             strategy_id=strategy_id,
             notional_eur=notional if notional_currency == "EUR" else None,
-            tenor=leg.tenor or calculate_tenor(effective_date_str, expiration_date_str),
+            instrument=leg.instrument,
             is_forward=is_forward
         )
     except Exception as e:
@@ -388,7 +389,7 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
         # Convert each leg to a Trade
         leg_trades = []
         for leg in response_data.legs:
-            trade = normalize_leg_api_to_trade(leg, strategy_id=response_data.id, execution_datetime=execution_datetime)
+            trade = normalize_leg_api_to_trade(leg, strategy_id=response_data.id, execution_datetime=execution_datetime, instrument=response_data.instrument)
             if trade:
                 leg_trades.append(trade)
                 trades.append(trade)
@@ -398,25 +399,19 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
             # Extract underlying name from strategy or first leg
             underlying_name = response_data.Underlier or (leg_trades[0].unique_product_identifier_underlier_name if leg_trades else "Unknown")
             
-            # Extract tenors from legs
-            tenors = []
-            for leg in response_data.legs:
-                if leg.Tenorleg1:
-                    tenors.append(leg.Tenorleg1)
-                if leg.Tenorleg2:
-                    tenors.append(leg.Tenorleg2)
+            # Extract instruments from strategy and trades
+            instruments = []
             
-            # Also get tenors from trades
-            trade_tenors = [t.tenor for t in leg_trades if t.tenor]
-            tenors.extend(trade_tenors)
+            # Use instrument from strategy level (this is the maturity of the swap)
+            if response_data.instrument:
+                instruments.append(response_data.instrument)
             
-            unique_tenors = sorted(list(set(tenors))) if tenors else []
-            tenor_pair = "/".join(unique_tenors) if unique_tenors else None
+            # Also get instruments from trades
+            trade_instruments = [t.instrument for t in leg_trades if t.instrument]
+            instruments.extend(trade_instruments)
             
-            # Use strategy Tenor if available
-            if response_data.Tenor and response_data.Tenor not in unique_tenors:
-                unique_tenors.insert(0, response_data.Tenor)
-                tenor_pair = "/".join(unique_tenors)
+            unique_instruments = sorted(list(set(instruments))) if instruments else []
+            instrument_pair = "/".join(unique_instruments) if unique_instruments else None
             
             # Classify strategy type based on leg count
             num_legs = response_data.Legscount or len(leg_trades)
@@ -431,8 +426,8 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
             else:
                 strategy_type = "Package"
             
-            if tenor_pair:
-                strategy_type = f"{tenor_pair} {strategy_type}"
+            if instrument_pair:
+                strategy_type = f"{instrument_pair} {strategy_type}"
             
             # Calculate total notional
             total_notional = response_data.Notional or response_data.Notionaltruncated
@@ -472,8 +467,8 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
                 execution_start=execution_start,
                 execution_end=execution_end,
                 package_transaction_price=package_transaction_price,
-                tenor_pair=tenor_pair,
-                tenor_legs=unique_tenors if unique_tenors else None
+                instrument_pair=instrument_pair,
+                instrument_legs=unique_instruments if unique_instruments else None
             )
         
     except Exception as e:
@@ -516,10 +511,10 @@ def convert_internal_api_response(response_data: InternalAPIResponse) -> Tuple[L
             # Extract underlying name from first leg
             underlying_name = leg_trades[0].unique_product_identifier_underlier_name or "Unknown"
             
-            # Extract tenors
-            tenors = [t.tenor for t in leg_trades if t.tenor]
-            unique_tenors = sorted(list(set(tenors))) if tenors else []
-            tenor_pair = "/".join(unique_tenors) if unique_tenors else None
+            # Extract instruments
+            instruments = [t.instrument for t in leg_trades if t.instrument]
+            unique_instruments = sorted(list(set(instruments))) if instruments else []
+            instrument_pair = "/".join(unique_instruments) if unique_instruments else None
             
             # Classify strategy type
             num_legs = len(leg_trades)
@@ -532,8 +527,8 @@ def convert_internal_api_response(response_data: InternalAPIResponse) -> Tuple[L
             else:
                 strategy_type = "Package"
             
-            if tenor_pair:
-                strategy_type = f"{tenor_pair} {strategy_type}"
+            if instrument_pair:
+                strategy_type = f"{instrument_pair} {strategy_type}"
             
             # Calculate total notional
             total_notional = sum(t.notional_eur or t.notional_amount_leg1 for t in leg_trades)
@@ -547,8 +542,8 @@ def convert_internal_api_response(response_data: InternalAPIResponse) -> Tuple[L
                 execution_start=min(t.execution_timestamp for t in leg_trades),
                 execution_end=max(t.execution_timestamp for t in leg_trades),
                 package_transaction_price=None,
-                tenor_pair=tenor_pair,
-                tenor_legs=unique_tenors if unique_tenors else None
+                instrument_pair=instrument_pair,
+                instrument_legs=unique_instruments if unique_instruments else None
             )
         
     except Exception as e:

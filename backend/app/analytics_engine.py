@@ -20,7 +20,7 @@ from collections import defaultdict
 import statistics
 
 from app.models import (
-    Trade, Strategy, Alert, TenorDetail, SpreadDetail, SpreadMetrics,
+    Trade, Strategy, Alert, InstrumentDetail, SpreadDetail, SpreadMetrics,
     ProFlowMetrics, VolatilityMetrics, ExecutionMetrics, PriceImpactMetrics,
     ForwardCurveMetrics, HistoricalContext, ProAlert, ProTraderMetrics, ProTraderDelta
 )
@@ -48,9 +48,11 @@ class AnalyticsEngine:
         self.volume_history: List[tuple] = []  # Store volume for momentum
         self.max_history_size = 1000  # Limit history size
     
-    def estimate_duration(self, tenor: str) -> float:
+    def estimate_duration(self, instrument: str) -> float:
         """Estimate duration factor for DV01 calculation."""
-        # Standard duration estimates for IRS by tenor
+        # Standard duration estimates for IRS by instrument
+        # Extract base tenor from instrument (e.g., "10Y" from "5Y10Y")
+        base_instrument = instrument.split('/')[0] if '/' in instrument else instrument
         duration_map = {
             "3M": 0.25,
             "6M": 0.5,
@@ -64,7 +66,7 @@ class AnalyticsEngine:
             "20Y": 14.5,
             "30Y": 18.0,
         }
-        return duration_map.get(tenor, 5.0)  # Default to 5.0 if unknown
+        return duration_map.get(base_instrument, 5.0)  # Default to 5.0 if unknown
     
     def calculate_hhi(self, volumes: Dict[str, float]) -> float:
         """Calculate Herfindahl-Hirschman Index for concentration."""
@@ -84,70 +86,73 @@ class AnalyticsEngine:
     
     def calculate_curve_metrics(self, trades: List[Trade]) -> Dict:
         """Calculate curve analysis metrics."""
-        # Group by tenor
-        tenor_data = defaultdict(lambda: {"notional": 0.0, "count": 0, "rates": []})
+        # Group by instrument
+        instrument_data = defaultdict(lambda: {"notional": 0.0, "count": 0, "rates": []})
         
         for trade in trades:
-            if not trade.tenor or not trade.notional_eur:
+            if not trade.instrument or not trade.notional_eur:
                 continue
             
-            tenor = trade.tenor
-            tenor_data[tenor]["notional"] += trade.notional_eur
-            tenor_data[tenor]["count"] += 1
+            instrument = trade.instrument
+            instrument_data[instrument]["notional"] += trade.notional_eur
+            instrument_data[instrument]["count"] += 1
             
             # Collect rates (use leg1 fixed rate if available)
             if trade.fixed_rate_leg1 is not None:
-                tenor_data[tenor]["rates"].append(trade.fixed_rate_leg1)
+                instrument_data[instrument]["rates"].append(trade.fixed_rate_leg1)
         
-        # Build tenor distribution
-        tenor_distribution = []
-        average_rate_by_tenor = {}
+        # Build instrument distribution
+        instrument_distribution = []
+        average_rate_by_instrument = {}
         
-        for tenor, data in tenor_data.items():
+        for instrument, data in instrument_data.items():
             avg_rate = statistics.mean(data["rates"]) if data["rates"] else None
-            tenor_distribution.append({
-                "tenor": tenor,
+            instrument_distribution.append({
+                "instrument": instrument,
                 "notional": data["notional"],
                 "count": data["count"],
                 "avg_rate": avg_rate
             })
             if avg_rate is not None:
-                average_rate_by_tenor[tenor] = avg_rate
+                average_rate_by_instrument[instrument] = avg_rate
         
-        # Sort by tenor order
-        tenor_order = ["3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"]
-        tenor_distribution.sort(key=lambda x: (
-            tenor_order.index(x["tenor"]) if x["tenor"] in tenor_order else 999,
-            x["tenor"]
-        ))
+        # Sort by instrument order (extract base tenor for sorting)
+        instrument_order = ["3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"]
+        def get_sort_key(x):
+            instrument_val = x["instrument"]
+            # Extract base instrument for sorting (e.g., "10Y" from "5Y10Y")
+            base = instrument_val.split('/')[0] if '/' in instrument_val else instrument_val
+            return instrument_order.index(base) if base in instrument_order else 999
         
-        # Calculate tenor spreads
-        tenor_spread = {}
-        if "10Y" in average_rate_by_tenor and "2Y" in average_rate_by_tenor:
-            tenor_spread["10Y-2Y"] = average_rate_by_tenor["10Y"] - average_rate_by_tenor["2Y"]
-        if "30Y" in average_rate_by_tenor and "10Y" in average_rate_by_tenor:
-            tenor_spread["30Y-10Y"] = average_rate_by_tenor["30Y"] - average_rate_by_tenor["10Y"]
+        instrument_distribution.sort(key=get_sort_key)
         
-        # Rate evolution (simplified - track current rates by tenor)
+        # Calculate instrument spreads
+        instrument_spread = {}
+        if "10Y" in average_rate_by_instrument and "2Y" in average_rate_by_instrument:
+            instrument_spread["10Y-2Y"] = average_rate_by_instrument["10Y"] - average_rate_by_instrument["2Y"]
+        if "30Y" in average_rate_by_instrument and "10Y" in average_rate_by_instrument:
+            instrument_spread["30Y-10Y"] = average_rate_by_instrument["30Y"] - average_rate_by_instrument["10Y"]
+        
+        # Rate evolution (simplified - track current rates by instrument)
         now = datetime.utcnow()
         rate_evolution = [{
             "timestamp": now.isoformat(),
-            **{k: v for k, v in average_rate_by_tenor.items()}
+            **{k: v for k, v in average_rate_by_instrument.items()}
         }]
         
         # Store in history (keep last 100)
         self.rate_history.append({
             "timestamp": now,
-            "rates": average_rate_by_tenor.copy()
+            "rates": average_rate_by_instrument.copy()
         })
         if len(self.rate_history) > 100:
             self.rate_history = self.rate_history[-100:]
         
         return {
-            "tenor_distribution": tenor_distribution,
+            "instrument_distribution": instrument_distribution,
             "rate_evolution": rate_evolution,
-            "tenor_spread": tenor_spread,
-            "average_rate_by_tenor": average_rate_by_tenor
+            "instrument_spread": instrument_spread,
+            "average_rate_by_instrument": average_rate_by_instrument
         }
     
     def calculate_flow_metrics(self, trades: List[Trade]) -> Dict:
@@ -211,10 +216,10 @@ class AnalyticsEngine:
         notionals = []
         
         for trade in trades:
-            if not trade.tenor or not trade.notional_eur:
+            if not trade.instrument or not trade.notional_eur:
                 continue
             
-            duration = self.estimate_duration(trade.tenor)
+            duration = self.estimate_duration(trade.instrument)
             # DV01 approximation: notional × duration × 0.0001 (1bp)
             dv01_contribution = trade.notional_eur * duration * 0.0001
             total_dv01 += dv01_contribution
@@ -318,10 +323,10 @@ class AnalyticsEngine:
                     break
             
             if one_hour_ago:
-                for tenor in current["rates"]:
-                    if tenor in one_hour_ago["rates"]:
-                        rate_change = current["rates"][tenor] - one_hour_ago["rates"][tenor]
-                        rate_velocity[tenor] = rate_change * 10000  # Convert to bps per hour
+                for instrument in current["rates"]:
+                    if instrument in one_hour_ago["rates"]:
+                        rate_change = current["rates"][instrument] - one_hour_ago["rates"][instrument]
+                        rate_velocity[instrument] = rate_change * 10000  # Convert to bps per hour
         
         return {
             "volume_last_5min": volume_last_5min,
@@ -336,7 +341,7 @@ class AnalyticsEngine:
     def calculate_currency_metrics(self, trades: List[Trade]) -> Dict:
         """Calculate currency breakdown."""
         currency_data = defaultdict(lambda: {"notional": 0.0, "count": 0})
-        currency_tenor_data = defaultdict(lambda: defaultdict(float))
+        currency_instrument_data = defaultdict(lambda: defaultdict(float))
         
         for trade in trades:
             if not trade.notional_eur:
@@ -347,9 +352,9 @@ class AnalyticsEngine:
             currency_data[currency]["notional"] += trade.notional_eur
             currency_data[currency]["count"] += 1
             
-            # Currency × Tenor heatmap
-            if trade.tenor:
-                currency_tenor_data[currency][trade.tenor] += trade.notional_eur
+            # Currency × Instrument heatmap
+            if trade.instrument:
+                currency_instrument_data[currency][trade.instrument] += trade.notional_eur
         
         # Currency breakdown
         currency_breakdown = [
@@ -360,10 +365,10 @@ class AnalyticsEngine:
         
         # Currency heatmap
         currency_heatmap = []
-        for currency, tenor_data in currency_tenor_data.items():
-            for tenor, notional in tenor_data.items():
+        for currency, instrument_data in currency_instrument_data.items():
+            for instrument, notional in instrument_data.items():
                 currency_heatmap.append({
-                    "tenor": tenor,
+                    "instrument": instrument,
                     "currency": currency,
                     "notional": notional
                 })
@@ -389,17 +394,17 @@ class AnalyticsEngine:
         ]
         strategy_avg_notional.sort(key=lambda x: x["avg_notional"], reverse=True)
         
-        # Strategy tenor preference
-        strategy_tenor_preference = []
+        # Strategy instrument preference
+        strategy_instrument_preference = []
         for strategy in strategies:
-            # Get tenors from trades in this strategy
+            # Get instruments from trades in this strategy
             strategy_trades = [t for t in trades if t.dissemination_identifier in strategy.legs]
-            tenors = [t.tenor for t in strategy_trades if t.tenor]
-            unique_tenors = list(set(tenors))
-            if unique_tenors:
-                strategy_tenor_preference.append({
+            instruments = [t.instrument for t in strategy_trades if t.instrument]
+            unique_instruments = list(set(instruments))
+            if unique_instruments:
+                strategy_instrument_preference.append({
                     "type": strategy.strategy_type,
-                    "tenors": unique_tenors
+                    "instruments": unique_instruments
                 })
         
         # Package vs custom
@@ -411,40 +416,40 @@ class AnalyticsEngine:
             "custom": custom_count
         }
         
-        # NEW: Tenor pair statistics
-        tenor_pair_stats = defaultdict(lambda: {"count": 0, "total_notional": 0.0})
+        # NEW: Instrument pair statistics
+        instrument_pair_stats = defaultdict(lambda: {"count": 0, "total_notional": 0.0})
         for strategy in strategies:
-            if strategy.tenor_pair:
-                tenor_pair_stats[strategy.tenor_pair]["count"] += 1
-                tenor_pair_stats[strategy.tenor_pair]["total_notional"] += strategy.total_notional_eur
+            if strategy.instrument_pair:
+                instrument_pair_stats[strategy.instrument_pair]["count"] += 1
+                instrument_pair_stats[strategy.instrument_pair]["total_notional"] += strategy.total_notional_eur
         
         # Format for output
-        tenor_pair_distribution = [
+        instrument_pair_distribution = [
             {
-                "tenor_pair": pair,
+                "instrument_pair": pair,
                 "count": stats["count"],
                 "total_notional": stats["total_notional"],
                 "avg_notional": stats["total_notional"] / stats["count"] if stats["count"] > 0 else 0
             }
-            for pair, stats in tenor_pair_stats.items()
+            for pair, stats in instrument_pair_stats.items()
         ]
         # Sort by count descending
-        tenor_pair_distribution.sort(key=lambda x: x["count"], reverse=True)
+        instrument_pair_distribution.sort(key=lambda x: x["count"], reverse=True)
         
         return {
             "strategy_avg_notional": strategy_avg_notional,
-            "strategy_tenor_preference": strategy_tenor_preference,
+            "strategy_instrument_preference": strategy_instrument_preference,
             "package_vs_custom": package_vs_custom,
-            "tenor_pair_distribution": tenor_pair_distribution
+            "instrument_pair_distribution": instrument_pair_distribution
         }
 
     # ============================================================================
     # Pro Trader Metrics for EUR IRS Market Makers
     # ============================================================================
 
-    def _calculate_tenor_details_eur(self, trades: List[Trade]) -> Dict[str, TenorDetail]:
-        """Calculate detailed metrics for each EUR tenor."""
-        tenor_data = defaultdict(lambda: {
+    def _calculate_instrument_details_eur(self, trades: List[Trade]) -> Dict[str, InstrumentDetail]:
+        """Calculate detailed metrics for each EUR instrument."""
+        instrument_data = defaultdict(lambda: {
             "rates": [],
             "rates_with_notional": [],  # (rate, notional) for VWAP
             "volumes": [],
@@ -454,37 +459,37 @@ class AnalyticsEngine:
             "last_timestamp": None
         })
         
-        # Group trades by tenor
+        # Group trades by instrument
         # Accept all trades (not just EUR) if no EUR available
         eur_trades = [t for t in trades if t.notional_currency_leg1 == "EUR"]
         trades_to_use = eur_trades if eur_trades else trades
         
         for trade in trades_to_use:
-            if not trade.tenor or not trade.notional_eur:
+            if not trade.instrument or not trade.notional_eur:
                 continue
             
             if trade.fixed_rate_leg1 is None:
                 continue
             
-            tenor = trade.tenor
+            instrument = trade.instrument
             rate = trade.fixed_rate_leg1
             notional = trade.notional_eur
             
-            tenor_data[tenor]["rates"].append(rate)
-            tenor_data[tenor]["rates_with_notional"].append((rate, notional))
-            tenor_data[tenor]["volumes"].append(notional)
-            tenor_data[tenor]["trade_count"] += 1
-            tenor_data[tenor]["total_volume"] += notional
+            instrument_data[instrument]["rates"].append(rate)
+            instrument_data[instrument]["rates_with_notional"].append((rate, notional))
+            instrument_data[instrument]["volumes"].append(notional)
+            instrument_data[instrument]["trade_count"] += 1
+            instrument_data[instrument]["total_volume"] += notional
             
             # Track last rate
-            if (tenor_data[tenor]["last_timestamp"] is None or 
-                trade.execution_timestamp > tenor_data[tenor]["last_timestamp"]):
-                tenor_data[tenor]["last_rate"] = rate
-                tenor_data[tenor]["last_timestamp"] = trade.execution_timestamp
+            if (instrument_data[instrument]["last_timestamp"] is None or 
+                trade.execution_timestamp > instrument_data[instrument]["last_timestamp"]):
+                instrument_data[instrument]["last_rate"] = rate
+                instrument_data[instrument]["last_timestamp"] = trade.execution_timestamp
         
-        # Calculate metrics per tenor
+        # Calculate metrics per instrument
         result = {}
-        for tenor, data in tenor_data.items():
+        for instrument, data in instrument_data.items():
             if not data["rates"]:
                 continue
             
@@ -513,8 +518,8 @@ class AnalyticsEngine:
             # Group by size buckets and measure impact
             price_impact = self._estimate_price_impact(data["rates_with_notional"])
             
-            result[tenor] = TenorDetail(
-                tenor=tenor,
+            result[instrument] = InstrumentDetail(
+                instrument=instrument,
                 high=high,
                 low=low,
                 mid=mid,
@@ -565,16 +570,16 @@ class AnalyticsEngine:
         
         return None
 
-    def _calculate_spread_metrics_eur(self, tenor_metrics: Dict[str, TenorDetail]) -> SpreadMetrics:
-        """Calculate inter-tenor spread metrics for EUR IRS."""
-        def get_mid_rate(tenor: str) -> Optional[float]:
-            if tenor in tenor_metrics and tenor_metrics[tenor].mid is not None:
-                return tenor_metrics[tenor].mid
+    def _calculate_spread_metrics_eur(self, instrument_metrics: Dict[str, InstrumentDetail]) -> SpreadMetrics:
+        """Calculate inter-instrument spread metrics for EUR IRS."""
+        def get_mid_rate(instrument: str) -> Optional[float]:
+            if instrument in instrument_metrics and instrument_metrics[instrument].mid is not None:
+                return instrument_metrics[instrument].mid
             return None
         
-        def calculate_spread(tenor1: str, tenor2: str) -> Optional[SpreadDetail]:
-            mid1 = get_mid_rate(tenor1)
-            mid2 = get_mid_rate(tenor2)
+        def calculate_spread(instrument1: str, instrument2: str) -> Optional[SpreadDetail]:
+            mid1 = get_mid_rate(instrument1)
+            mid2 = get_mid_rate(instrument2)
             
             if mid1 is None or mid2 is None:
                 return None
@@ -618,23 +623,23 @@ class AnalyticsEngine:
                 net_flow_direction="BALANCED",
                 flow_intensity=0.0,
                 buy_volume_ratio=0.5,
-                dominant_tenor="",
+                dominant_instrument="",
                 new_trades_count=0,
                 large_block_count=0,
-                flow_by_tenor={}
+                flow_by_instrument={}
             )
         
         # Analyze rate movements to infer flow direction
         # If rates are rising, there's sell pressure; if falling, buy pressure
-        tenor_rates = defaultdict(list)
-        tenor_volumes = defaultdict(float)
+        instrument_rates = defaultdict(list)
+        instrument_volumes = defaultdict(float)
         new_trades = 0
         large_blocks = 0
         
         for trade in trades:
-            if trade.tenor and trade.fixed_rate_leg1 is not None and trade.notional_eur:
-                tenor_rates[trade.tenor].append((trade.execution_timestamp, trade.fixed_rate_leg1))
-                tenor_volumes[trade.tenor] += trade.notional_eur
+            if trade.instrument and trade.fixed_rate_leg1 is not None and trade.notional_eur:
+                instrument_rates[trade.instrument].append((trade.execution_timestamp, trade.fixed_rate_leg1))
+                instrument_volumes[trade.instrument] += trade.notional_eur
                 
                 if trade.action_type == "NEWT":
                     new_trades += 1
@@ -645,11 +650,11 @@ class AnalyticsEngine:
         # Determine flow direction by analyzing rate trends
         buy_pressure = 0
         sell_pressure = 0
-        flow_by_tenor = {}
+        flow_by_instrument = {}
         
-        for tenor, rate_history in tenor_rates.items():
+        for instrument, rate_history in instrument_rates.items():
             if len(rate_history) < 2:
-                flow_by_tenor[tenor] = "BALANCED"
+                flow_by_instrument[instrument] = "BALANCED"
                 continue
             
             # Sort by timestamp
@@ -661,13 +666,13 @@ class AnalyticsEngine:
             rate_change = last_rate - first_rate
             
             if rate_change < -0.0001:  # Rates falling = buy pressure
-                buy_pressure += tenor_volumes[tenor]
-                flow_by_tenor[tenor] = "BUY_PRESSURE"
+                buy_pressure += instrument_volumes[instrument]
+                flow_by_instrument[instrument] = "BUY_PRESSURE"
             elif rate_change > 0.0001:  # Rates rising = sell pressure
-                sell_pressure += tenor_volumes[tenor]
-                flow_by_tenor[tenor] = "SELL_PRESSURE"
+                sell_pressure += instrument_volumes[instrument]
+                flow_by_instrument[instrument] = "SELL_PRESSURE"
             else:
-                flow_by_tenor[tenor] = "BALANCED"
+                flow_by_instrument[instrument] = "BALANCED"
         
         total_volume = buy_pressure + sell_pressure
         buy_volume_ratio = buy_pressure / total_volume if total_volume > 0 else 0.5
@@ -683,42 +688,42 @@ class AnalyticsEngine:
         # Flow intensity (0-100)
         intensity = min(abs(buy_pressure - sell_pressure) / max(total_volume, 1) * 100, 100)
         
-        # Dominant tenor
-        dominant_tenor = max(tenor_volumes.items(), key=lambda x: x[1])[0] if tenor_volumes else ""
+        # Dominant instrument
+        dominant_instrument = max(instrument_volumes.items(), key=lambda x: x[1])[0] if instrument_volumes else ""
         
         return ProFlowMetrics(
             net_flow_direction=net_direction,
             flow_intensity=intensity,
             buy_volume_ratio=buy_volume_ratio,
-            dominant_tenor=dominant_tenor,
+            dominant_instrument=dominant_instrument,
             new_trades_count=new_trades,
             large_block_count=large_blocks,
-            flow_by_tenor=flow_by_tenor
+            flow_by_instrument=flow_by_instrument
         )
 
-    def _calculate_volatility_metrics(self, trades: List[Trade], tenor_metrics: Dict[str, TenorDetail]) -> VolatilityMetrics:
+    def _calculate_volatility_metrics(self, trades: List[Trade], instrument_metrics: Dict[str, InstrumentDetail]) -> VolatilityMetrics:
         """Calculate volatility metrics."""
-        # Aggregate volatility across all tenors
-        volatilities = [v.volatility for v in tenor_metrics.values() if v.volatility is not None]
+        # Aggregate volatility across all instruments
+        volatilities = [v.volatility for v in instrument_metrics.values() if v.volatility is not None]
         realized_volatility = statistics.mean(volatilities) if volatilities else 0.0
         
         # Rate velocity (bps/min) - simplified calculation
         rate_velocity = {}
-        for tenor, detail in tenor_metrics.items():
+        for instrument, detail in instrument_metrics.items():
             if detail.volatility is not None:
                 # Rough estimate: volatility / sqrt(time_window_minutes)
-                rate_velocity[tenor] = detail.volatility / 10.0  # Placeholder
+                rate_velocity[instrument] = detail.volatility / 10.0  # Placeholder
         
-        volatility_by_tenor = {tenor: detail.volatility or 0.0 for tenor, detail in tenor_metrics.items()}
+        volatility_by_instrument = {instrument: detail.volatility or 0.0 for instrument, detail in instrument_metrics.items()}
         
         return VolatilityMetrics(
             realized_volatility=realized_volatility,
             rate_velocity=rate_velocity,
-            volatility_by_tenor=volatility_by_tenor,
+            volatility_by_instrument=volatility_by_instrument,
             volatility_percentile=50.0  # Placeholder, would need historical data
         )
 
-    def _calculate_execution_quality(self, trades: List[Trade], tenor_metrics: Dict[str, TenorDetail]) -> ExecutionMetrics:
+    def _calculate_execution_quality(self, trades: List[Trade], instrument_metrics: Dict[str, InstrumentDetail]) -> ExecutionMetrics:
         """Calculate execution quality metrics."""
         if not trades:
             return ExecutionMetrics(
@@ -735,14 +740,14 @@ class AnalyticsEngine:
         vwap_deviations = []
         
         for trade in trades:
-            if not trade.tenor or trade.fixed_rate_leg1 is None:
+            if not trade.instrument or trade.fixed_rate_leg1 is None:
                 continue
             
-            tenor = trade.tenor
-            if tenor not in tenor_metrics:
+            instrument = trade.instrument
+            if instrument not in instrument_metrics:
                 continue
             
-            detail = tenor_metrics[tenor]
+            detail = instrument_metrics[instrument]
             rate = trade.fixed_rate_leg1 * 100  # Convert to %
             
             # Slippage vs mid
@@ -781,7 +786,7 @@ class AnalyticsEngine:
             execution_quality_score=execution_quality_score
         )
 
-    def _calculate_price_impact(self, trades: List[Trade], tenor_metrics: Dict[str, TenorDetail]) -> PriceImpactMetrics:
+    def _calculate_price_impact(self, trades: List[Trade], instrument_metrics: Dict[str, InstrumentDetail]) -> PriceImpactMetrics:
         """Calculate price impact metrics."""
         # Group trades by size buckets
         buckets = {
@@ -795,7 +800,7 @@ class AnalyticsEngine:
         max_impact_size = 0.0
         
         for trade in trades:
-            if not trade.notional_eur or not trade.tenor:
+            if not trade.notional_eur or not trade.instrument:
                 continue
             
             size = trade.notional_eur
@@ -807,8 +812,8 @@ class AnalyticsEngine:
                 buckets[">500M"].append(trade)
             
             # Estimate impact (simplified: larger trades have more impact)
-            if trade.tenor in tenor_metrics:
-                detail = tenor_metrics[trade.tenor]
+            if trade.instrument in instrument_metrics:
+                detail = instrument_metrics[trade.instrument]
                 if detail.price_impact is not None:
                     impact = detail.price_impact * (size / 100_000_000)  # Scale to trade size
                     if impact > max_impact:
@@ -820,11 +825,11 @@ class AnalyticsEngine:
         impact_by_bucket = {}
         for bucket, bucket_trades in buckets.items():
             if bucket_trades:
-                # Simplified: use average price impact from tenor metrics
+                # Simplified: use average price impact from instrument metrics
                 impacts = []
                 for trade in bucket_trades:
-                    if trade.tenor in tenor_metrics:
-                        detail = tenor_metrics[trade.tenor]
+                    if trade.instrument in instrument_metrics:
+                        detail = instrument_metrics[trade.instrument]
                         if detail.price_impact is not None:
                             impacts.append(detail.price_impact)
                 impact_by_bucket[bucket] = statistics.mean(impacts) if impacts else 0.0
@@ -865,7 +870,7 @@ class AnalyticsEngine:
 
     def _calculate_historical_context(
         self,
-        tenor_metrics: Dict[str, TenorDetail],
+        instrument_metrics: Dict[str, InstrumentDetail],
         historical_30d: Optional[List[Trade]],
         historical_90d: Optional[List[Trade]]
     ) -> HistoricalContext:
@@ -879,13 +884,13 @@ class AnalyticsEngine:
         deviation_from_avg = {}
         
         # For now, return empty/placeholder values
-        for tenor in tenor_metrics.keys():
-            percentile_30d[tenor] = 50.0
-            percentile_90d[tenor] = 50.0
-            z_score[tenor] = 0.0
-            avg_30d[tenor] = 0.0
-            avg_90d[tenor] = 0.0
-            deviation_from_avg[tenor] = 0.0
+        for instrument in instrument_metrics.keys():
+            percentile_30d[instrument] = 50.0
+            percentile_90d[instrument] = 50.0
+            z_score[instrument] = 0.0
+            avg_30d[instrument] = 0.0
+            avg_90d[instrument] = 0.0
+            deviation_from_avg[instrument] = 0.0
         
         return HistoricalContext(
             percentile_30d=percentile_30d,
@@ -898,7 +903,7 @@ class AnalyticsEngine:
 
     def _detect_pro_alerts(
         self,
-        tenor_metrics: Dict[str, TenorDetail],
+        instrument_metrics: Dict[str, InstrumentDetail],
         spread_metrics: SpreadMetrics,
         flow_metrics: ProFlowMetrics,
         volatility_metrics: VolatilityMetrics,
@@ -915,11 +920,11 @@ class AnalyticsEngine:
                     alert_id=f"large_block_{trade.dissemination_identifier}",
                     alert_type="LARGE_BLOCK",
                     severity="HIGH",
-                    tenor=trade.tenor,
+                    instrument=trade.instrument,
                     current_value=trade.notional_eur,
                     threshold=5_000_000_000,
                     timestamp=now,
-                    message=f"Large block trade detected: {trade.notional_eur/1e9:.2f}B EUR in {trade.tenor or 'unknown tenor'}"
+                    message=f"Large block trade detected: {trade.notional_eur/1e9:.2f}B EUR in {trade.instrument or 'unknown instrument'}"
                 ))
         
         # Check for abnormal spreads (simplified: if spread > 2x typical)
@@ -943,7 +948,7 @@ class AnalyticsEngine:
                         alert_id=f"abnormal_spread_{spread_name}_{now.timestamp()}",
                         alert_type="ABNORMAL_SPREAD",
                         severity="MEDIUM",
-                        tenor=None,
+                        instrument=None,
                         current_value=current,
                         threshold=typical * 2,
                         timestamp=now,
@@ -956,7 +961,7 @@ class AnalyticsEngine:
                 alert_id=f"volatility_spike_{now.timestamp()}",
                 alert_type="VOLATILITY_SPIKE",
                 severity="HIGH",
-                tenor=None,
+                instrument=None,
                 current_value=volatility_metrics.realized_volatility,
                 threshold=0.0,  # Would need actual threshold
                 timestamp=now,
@@ -1012,20 +1017,20 @@ class AnalyticsEngine:
                 logger.debug(f"Using {total_count} EUR trades for {time_window_minutes}min window")
         
         # Calculate all metrics
-        tenor_metrics = self._calculate_tenor_details_eur(recent_trades)
-        spread_metrics = self._calculate_spread_metrics_eur(tenor_metrics)
+        instrument_metrics = self._calculate_instrument_details_eur(recent_trades)
+        spread_metrics = self._calculate_spread_metrics_eur(instrument_metrics)
         flow_metrics = self._calculate_order_flow_imbalance(recent_trades)
-        volatility_metrics = self._calculate_volatility_metrics(recent_trades, tenor_metrics)
-        execution_metrics = self._calculate_execution_quality(recent_trades, tenor_metrics)
-        price_impact_metrics = self._calculate_price_impact(recent_trades, tenor_metrics)
+        volatility_metrics = self._calculate_volatility_metrics(recent_trades, instrument_metrics)
+        execution_metrics = self._calculate_execution_quality(recent_trades, instrument_metrics)
+        price_impact_metrics = self._calculate_price_impact(recent_trades, instrument_metrics)
         forward_curve_metrics = self._calculate_forward_curve(recent_trades)
-        historical_context = self._calculate_historical_context(tenor_metrics, historical_30d, historical_90d)
-        alerts = self._detect_pro_alerts(tenor_metrics, spread_metrics, flow_metrics, volatility_metrics, recent_trades)
+        historical_context = self._calculate_historical_context(instrument_metrics, historical_30d, historical_90d)
+        alerts = self._detect_pro_alerts(instrument_metrics, spread_metrics, flow_metrics, volatility_metrics, recent_trades)
         
         # Build ProTraderMetrics
         pro_metrics = ProTraderMetrics(
             time_window=time_window_minutes,
-            tenor_metrics=tenor_metrics,
+            instrument_metrics=instrument_metrics,
             spread_metrics=spread_metrics,
             flow_metrics=flow_metrics,
             volatility_metrics=volatility_metrics,
@@ -1048,13 +1053,13 @@ class AnalyticsEngine:
         tenor_deltas = {}
         spread_deltas = {}
         
-        # Calculate tenor deltas
-        short_tenors = metrics_short.get("tenor_metrics", {})
-        long_tenors = metrics_long.get("tenor_metrics", {})
+        # Calculate instrument deltas
+        short_instruments = metrics_short.get("instrument_metrics", {})
+        long_instruments = metrics_long.get("instrument_metrics", {})
         
-        for tenor in set(list(short_tenors.keys()) + list(long_tenors.keys())):
-            short_detail = short_tenors.get(tenor, {})
-            long_detail = long_tenors.get(tenor, {})
+        for instrument in set(list(short_instruments.keys()) + list(long_instruments.keys())):
+            short_detail = short_instruments.get(instrument, {})
+            long_detail = long_instruments.get(instrument, {})
             
             short_mid = short_detail.get("mid", 0) if short_detail else 0
             long_mid = long_detail.get("mid", 0) if long_detail else 0
@@ -1064,7 +1069,7 @@ class AnalyticsEngine:
             long_vol = long_detail.get("volume", 0) if long_detail else 0
             volume_change = ((short_vol - long_vol) / long_vol * 100) if long_vol > 0 else 0
             
-            tenor_deltas[tenor] = {
+            instrument_deltas[instrument] = {
                 "mid_change": mid_change,
                 "volume_change": volume_change,
                 "spread_change": 0.0  # Placeholder
@@ -1089,7 +1094,7 @@ class AnalyticsEngine:
         }
         
         delta = ProTraderDelta(
-            tenor_deltas=tenor_deltas,
+            instrument_deltas=instrument_deltas,
             spread_deltas=spread_deltas,
             flow_delta=flow_delta
         )

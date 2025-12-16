@@ -129,7 +129,7 @@ export default function RealTimeMetrics({ realtimeMetrics }: RealTimeMetricsProp
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Tenor
+                    Instrument
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Velocity (bps/h)
@@ -140,10 +140,10 @@ export default function RealTimeMetrics({ realtimeMetrics }: RealTimeMetricsProp
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {Object.entries(realtimeMetrics.rate_velocity).map(([tenor, velocity]) => (
-                  <tr key={tenor}>
+                {Object.entries(realtimeMetrics.rate_velocity).map(([instrument, velocity]) => (
+                  <tr key={instrument}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {tenor}
+                      {instrument}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {velocity.toFixed(2)}

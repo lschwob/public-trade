@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ProTraderMetrics, ProTraderDelta, TenorDetail } from '../../types/trade';
+import { ProTraderMetrics, ProTraderDelta, InstrumentDetail } from '../../types/trade';
 import MiniSparkline from '../charts/MiniSparkline';
 import SpreadBadge from '../charts/SpreadBadge';
 import OrderFlowBar from '../charts/OrderFlowBar';
@@ -46,15 +46,15 @@ export default function ProTrader({ proTraderMetrics, proTraderDeltas }: ProTrad
     );
   }
 
-  // Focus tenors: 5Y, 10Y, 30Y
-  const focusTenors = ['5Y', '10Y', '30Y'];
-  const tenorDetails = focusTenors
-    .map(tenor => ({ tenor, detail: currentMetrics.tenor_metrics[tenor] }))
+  // Focus instruments: 5Y, 10Y, 30Y
+  const focusInstruments = ['5Y', '10Y', '30Y'];
+  const instrumentDetails = focusInstruments
+    .map(instrument => ({ instrument, detail: currentMetrics.instrument_metrics[instrument] }))
     .filter(({ detail }) => detail !== undefined);
 
   // Check if we have any data
-  const hasData = tenorDetails.length > 0 || 
-    Object.keys(currentMetrics.tenor_metrics).length > 0 ||
+  const hasData = instrumentDetails.length > 0 || 
+    Object.keys(currentMetrics.instrument_metrics).length > 0 ||
     currentMetrics.flow_metrics.new_trades_count > 0;
 
   if (!hasData) {
@@ -76,8 +76,8 @@ export default function ProTrader({ proTraderMetrics, proTraderDeltas }: ProTrad
           <div className="flex space-x-2">
             {TIME_WINDOWS.map((window) => {
               const metrics = proTraderMetrics?.[window];
-              const tradeCount = metrics?.tenor_metrics ? 
-                Object.values(metrics.tenor_metrics).reduce((sum, d) => sum + (d?.trade_count || 0), 0) : 0;
+              const tradeCount = metrics?.instrument_metrics ? 
+                Object.values(metrics.instrument_metrics).reduce((sum, d) => sum + (d?.trade_count || 0), 0) : 0;
               
               return (
                 <button
@@ -124,17 +124,17 @@ export default function ProTrader({ proTraderMetrics, proTraderDeltas }: ProTrad
 
       {/* Main content */}
       <div className="flex-1 overflow-y-auto p-6">
-        {/* Tenor Cards and Order Flow */}
+        {/* Instrument Cards and Order Flow */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          {tenorDetails.map(({ tenor, detail }) => (
-            <TenorCard
-              key={tenor}
-              tenor={tenor}
+          {instrumentDetails.map(({ instrument, detail }) => (
+            <InstrumentCard
+              key={instrument}
+              instrument={instrument}
               detail={detail}
               formatNotional={formatNotional}
               formatRate={formatRate}
               showDelta={showDeltas}
-              referenceDetail={referenceMetrics?.tenor_metrics[tenor]}
+              referenceDetail={referenceMetrics?.instrument_metrics[instrument]}
             />
           ))}
           
@@ -149,7 +149,7 @@ export default function ProTrader({ proTraderMetrics, proTraderDeltas }: ProTrad
             <div className="mt-4 space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-600">Dominant:</span>
-                <span className="font-medium">{currentMetrics.flow_metrics.dominant_tenor}</span>
+                <span className="font-medium">{currentMetrics.flow_metrics.dominant_instrument}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">New Trades:</span>
@@ -182,9 +182,9 @@ export default function ProTrader({ proTraderMetrics, proTraderDeltas }: ProTrad
             />
             <div className="mt-4 space-y-2 text-sm">
               <div className="font-medium text-gray-700">Rate Velocity (bps/min):</div>
-              {Object.entries(currentMetrics.volatility_metrics.rate_velocity).map(([tenor, velocity]) => (
-                <div key={tenor} className="flex justify-between">
-                  <span className="text-gray-600">{tenor}:</span>
+              {Object.entries(currentMetrics.volatility_metrics.rate_velocity).map(([instrument, velocity]) => (
+                <div key={instrument} className="flex justify-between">
+                  <span className="text-gray-600">{instrument}:</span>
                   <span className="font-mono">{velocity > 0 ? '+' : ''}{velocity.toFixed(2)}</span>
                 </div>
               ))}
@@ -246,9 +246,9 @@ export default function ProTrader({ proTraderMetrics, proTraderDeltas }: ProTrad
               {Object.keys(currentMetrics.forward_curve_metrics.spot_vs_forward).length > 0 && (
                 <div className="mt-4">
                   <div className="text-sm font-medium text-gray-700 mb-2">Spot vs Forward:</div>
-                  {Object.entries(currentMetrics.forward_curve_metrics.spot_vs_forward).map(([tenor, spread]) => (
-                    <div key={tenor} className="flex justify-between text-sm">
-                      <span className="text-gray-600">{tenor}:</span>
+                  {Object.entries(currentMetrics.forward_curve_metrics.spot_vs_forward).map(([instrument, spread]) => (
+                    <div key={instrument} className="flex justify-between text-sm">
+                      <span className="text-gray-600">{instrument}:</span>
                       <span className="font-mono">{spread > 0 ? '+' : ''}{spread.toFixed(2)} bps</span>
                     </div>
                   ))}
@@ -296,17 +296,17 @@ export default function ProTrader({ proTraderMetrics, proTraderDeltas }: ProTrad
   );
 }
 
-// Tenor Card Component
-interface TenorCardProps {
-  tenor: string;
-  detail: TenorDetail;
+// Instrument Card Component
+interface InstrumentCardProps {
+  instrument: string;
+  detail: InstrumentDetail;
   formatNotional: (value: number) => string;
   formatRate: (rate: number | null) => string;
   showDelta?: boolean;
-  referenceDetail?: TenorDetail;
+  referenceDetail?: InstrumentDetail;
 }
 
-function TenorCard({ tenor, detail, formatNotional, formatRate, showDelta, referenceDetail }: TenorCardProps) {
+function InstrumentCard({ instrument, detail, formatNotional, formatRate, showDelta, referenceDetail }: InstrumentCardProps) {
   const deltaMid = showDelta && referenceDetail?.mid !== undefined && detail.mid !== undefined
     ? (detail.mid - referenceDetail.mid) * 100 // Convert to bps
     : null;
@@ -327,7 +327,7 @@ function TenorCard({ tenor, detail, formatNotional, formatRate, showDelta, refer
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-xl font-bold text-gray-900">{tenor} EUR IRS</h3>
+        <h3 className="text-xl font-bold text-gray-900">{instrument} EUR IRS</h3>
         <div className="text-right">
           <div className="text-sm text-gray-600">Volume</div>
           <div className="text-lg font-semibold">{formatNotional(detail.volume)}€</div>

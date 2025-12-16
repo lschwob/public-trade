@@ -43,9 +43,9 @@ export default function AlertBadge({ alert, onDismiss }: AlertBadgeProps) {
         <div className="font-semibold text-sm">{alert.alert_type.replace('_', ' ')}</div>
         <div className="text-xs opacity-90">{alert.message}</div>
       </div>
-      {alert.tenor && (
+      {alert.instrument && (
         <span className="text-xs font-mono bg-white bg-opacity-20 px-2 py-1 rounded">
-          {alert.tenor}
+          {alert.instrument}
         </span>
       )}
       {onDismiss && (

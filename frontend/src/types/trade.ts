@@ -40,7 +40,7 @@ export interface Trade {
   package_transaction_price?: string;
   strategy_id?: string;
   notional_eur?: number;
-  tenor?: string;
+  instrument?: string;
   package_legs?: Trade[];  // Legs if this is a package trade
   package_legs_count?: number;  // Total number of legs in package
   grouped_trades?: Trade[];  // Trades in the same group (same timestamp, underlying, etc.)
@@ -63,8 +63,8 @@ export interface Strategy {
   execution_start: string;
   execution_end: string;
   package_transaction_price?: string;
-  tenor_pair?: string;       // "10Y/30Y"
-  tenor_legs?: string[];     // ["10Y", "30Y"]
+  instrument_pair?: string;       // "10Y/30Y"
+  instrument_legs?: string[];     // ["10Y", "30Y"]
 }
 
 export interface Alert {
@@ -79,10 +79,10 @@ export interface Alert {
 }
 
 export interface CurveMetrics {
-  tenor_distribution: Array<{ tenor: string; notional: number; count: number; avg_rate: number | null }>;
-  rate_evolution: Array<{ timestamp: string; [tenor: string]: number }>;
-  tenor_spread: Record<string, number>;
-  average_rate_by_tenor: Record<string, number>;
+  instrument_distribution: Array<{ instrument: string; notional: number; count: number; avg_rate: number | null }>;
+  rate_evolution: Array<{ timestamp: string; [instrument: string]: number }>;
+  instrument_spread: Record<string, number>;
+  average_rate_by_instrument: Record<string, number>;
 }
 
 export interface FlowMetrics {
@@ -112,14 +112,14 @@ export interface RealTimeMetrics {
 
 export interface CurrencyMetrics {
   currency_breakdown: Array<{ currency: string; notional: number; count: number }>;
-  currency_heatmap: Array<{ tenor: string; currency: string; notional: number }>;
+  currency_heatmap: Array<{ instrument: string; currency: string; notional: number }>;
 }
 
 export interface StrategyMetrics {
   strategy_avg_notional: Array<{ type: string; avg_notional: number }>;
-  strategy_tenor_preference: Array<{ type: string; tenors: string[] }>;
+  strategy_instrument_preference: Array<{ type: string; instruments: string[] }>;
   package_vs_custom: Record<string, number>;
-  tenor_pair_distribution: Array<{ tenor_pair: string; count: number; total_notional: number; avg_notional: number }>;
+  instrument_pair_distribution: Array<{ instrument_pair: string; count: number; total_notional: number; avg_notional: number }>;
 }
 
 export interface Analytics {
@@ -145,8 +145,8 @@ export interface Analytics {
 // Pro Trader Metrics Types for EUR IRS Market Makers
 // ============================================================================
 
-export interface TenorDetail {
-  tenor: string; // "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"
+export interface InstrumentDetail {
+  instrument: string; // "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y", "5Y10Y", etc.
   high: number | null;
   low: number | null;
   mid: number | null;
@@ -180,16 +180,16 @@ export interface ProFlowMetrics {
   net_flow_direction: 'BUY_PRESSURE' | 'SELL_PRESSURE' | 'BALANCED';
   flow_intensity: number; // 0-100
   buy_volume_ratio: number; // 0-1
-  dominant_tenor: string;
+  dominant_instrument: string;
   new_trades_count: number;
   large_block_count: number; // >500M EUR
-  flow_by_tenor: Record<string, 'BUY_PRESSURE' | 'SELL_PRESSURE' | 'BALANCED'>;
+  flow_by_instrument: Record<string, 'BUY_PRESSURE' | 'SELL_PRESSURE' | 'BALANCED'>;
 }
 
 export interface VolatilityMetrics {
   realized_volatility: number; // annualisée
-  rate_velocity: Record<string, number>; // bps/min par tenor
-  volatility_by_tenor: Record<string, number>;
+  rate_velocity: Record<string, number>; // bps/min par instrument
+  volatility_by_instrument: Record<string, number>;
   volatility_percentile: number; // vs 30j
 }
 
@@ -212,14 +212,14 @@ export interface PriceImpactMetrics {
 }
 
 export interface ForwardCurveMetrics {
-  forward_rates: Record<string, number>; // taux forward par tenor
+  forward_rates: Record<string, number>; // taux forward par instrument
   spot_vs_forward: Record<string, number>; // écart en bps
   curve_shape: 'NORMAL' | 'INVERTED' | 'FLAT' | 'STEEP';
-  basis_swaps: Record<string, number>; // tenor basis
+  basis_swaps: Record<string, number>; // instrument basis
 }
 
 export interface HistoricalContext {
-  percentile_30d: Record<string, number>; // par tenor/spread
+  percentile_30d: Record<string, number>; // par instrument/spread
   percentile_90d: Record<string, number>;
   z_score: Record<string, number>;
   avg_30d: Record<string, number>;
@@ -231,7 +231,7 @@ export interface ProAlert {
   alert_id: string;
   alert_type: 'ABNORMAL_SPREAD' | 'LARGE_BLOCK' | 'CURVE_INVERSION' | 'VOLATILITY_SPIKE';
   severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  tenor: string | null;
+  instrument: string | null;
   current_value: number;
   threshold: number;
   timestamp: string;
@@ -240,7 +240,7 @@ export interface ProAlert {
 
 export interface ProTraderMetrics {
   time_window: number;
-  tenor_metrics: Record<string, TenorDetail>;
+  instrument_metrics: Record<string, InstrumentDetail>;
   spread_metrics: SpreadMetrics;
   flow_metrics: ProFlowMetrics;
   volatility_metrics: VolatilityMetrics;
@@ -253,7 +253,7 @@ export interface ProTraderMetrics {
 
 export interface ProTraderDelta {
   // Comparaison entre deux périodes (ex: 10min vs 1h)
-  tenor_deltas: Record<string, {
+  instrument_deltas: Record<string, {
     mid_change: number; // bps
     volume_change: number; // %
     spread_change: number; // bps

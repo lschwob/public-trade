@@ -139,7 +139,7 @@ class ExcelWriter:
         headers = [
             "ID", "Timestamp", "Action", "Underlying", "Notional Leg1", "Notional Leg2",
             "Currency Leg1", "Currency Leg2", "Fixed Rate Leg1", "Fixed Rate Leg2",
-            "Spread Leg2", "Rate %", "Maturity", "Tenor", "Platform", "Strategy ID",
+            "Spread Leg2", "Rate %", "Maturity", "Instrument", "Platform", "Strategy ID",
             "Package", "Notional EUR", "Is Forward", "Effective Date"
         ]
         
@@ -158,7 +158,7 @@ class ExcelWriter:
         """Initialize Strategies sheet headers."""
         headers = [
             "Strategy ID", "Type", "Underlying", "Nb Legs", "Total Notional EUR",
-            "Execution Start", "Execution End", "Package Price", "Tenor Pair"
+            "Execution Start", "Execution End", "Package Price", "Instrument Pair"
         ]
         
         for col, header in enumerate(headers, 1):
@@ -239,7 +239,7 @@ class ExcelWriter:
                     rate_display = f"Spread: {trade.spread_leg2}"
                 self.trades_sheet.cell(row=row, column=12, value=rate_display)
                 self.trades_sheet.cell(row=row, column=13, value=trade.expiration_date or "")
-                self.trades_sheet.cell(row=row, column=14, value=trade.tenor or "")
+                self.trades_sheet.cell(row=row, column=14, value=trade.instrument or "")
                 self.trades_sheet.cell(row=row, column=15, value=trade.platform_identifier or "")
                 self.trades_sheet.cell(row=row, column=16, value=trade.strategy_id or "")
                 self.trades_sheet.cell(row=row, column=17, value="Yes" if trade.package_indicator else "No")
@@ -292,7 +292,7 @@ class ExcelWriter:
                 self.strategies_sheet.cell(row=row, column=6, value=strategy.execution_start.strftime("%Y-%m-%d %H:%M:%S"))
                 self.strategies_sheet.cell(row=row, column=7, value=strategy.execution_end.strftime("%Y-%m-%d %H:%M:%S"))
                 self.strategies_sheet.cell(row=row, column=8, value=strategy.package_transaction_price or "")
-                self.strategies_sheet.cell(row=row, column=9, value=strategy.tenor_pair or "")
+                self.strategies_sheet.cell(row=row, column=9, value=strategy.instrument_pair or "")
                 return
         
         # Add new strategy
@@ -349,9 +349,9 @@ class ExcelWriter:
             row += 1
             self.analytics_sheet.cell(row=row, column=1, value="=== CURVE METRICS ===")
             row += 1
-            for tenor_data in analytics.curve_metrics.tenor_distribution:
-                self.analytics_sheet.cell(row=row, column=1, value=f"Tenor {tenor_data['tenor']}")
-                self.analytics_sheet.cell(row=row, column=2, value=f"Notional: {tenor_data['notional']}, Count: {tenor_data['count']}, Rate: {tenor_data.get('avg_rate', 'N/A')}")
+            for instrument_data in analytics.curve_metrics.instrument_distribution:
+                self.analytics_sheet.cell(row=row, column=1, value=f"Instrument {instrument_data['instrument']}")
+                self.analytics_sheet.cell(row=row, column=2, value=f"Notional: {instrument_data['notional']}, Count: {instrument_data['count']}, Rate: {instrument_data.get('avg_rate', 'N/A')}")
                 row += 1
         
         if analytics.flow_metrics:
@@ -446,7 +446,7 @@ class ExcelWriter:
                         package_transaction_price=None,  # Not stored in Excel currently
                         strategy_id=self.trades_sheet.cell(row=row, column=16).value or None,
                         notional_eur=float(self.trades_sheet.cell(row=row, column=18).value or 0),
-                        tenor=self.trades_sheet.cell(row=row, column=14).value or None,
+                        instrument=self.trades_sheet.cell(row=row, column=14).value or None,
                         is_forward=self.trades_sheet.cell(row=row, column=19).value == "Yes" if self.trades_sheet.max_column >= 19 and self.trades_sheet.cell(row=row, column=19).value else False,
                         effective_date_dt=None
                     )
