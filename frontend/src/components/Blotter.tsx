@@ -56,7 +56,6 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
 
 export default function Blotter({ trades, strategies = [] }: BlotterProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [tenorPairFilter, setTenorPairFilter] = useState<string>('all');
   
   // Additional filters
   const [actionFilter, setActionFilter] = useState<string>('all');
@@ -111,14 +110,6 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
     Array.from(new Set(trades.map(t => t.platform_identifier).filter(Boolean))).sort(),
     [trades]
   );
-
-  // Get unique instrument pairs from strategies
-  const uniqueInstrumentPairs = useMemo(() => {
-    const pairs = Array.from(
-      new Set(strategies.map(s => s.instrument_pair).filter(Boolean))
-    ).sort();
-    return pairs;
-  }, [strategies]);
 
   // Filter trades
   const filteredTrades = useMemo(() => {
@@ -176,18 +167,9 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
       filtered = filtered.filter(t => t.platform_identifier === platformFilter);
     }
     
-    // Instrument Pair filter (existing)
-    if (tenorPairFilter !== 'all') {
-      filtered = filtered.filter(trade => {
-        if (!trade.strategy_id) return false;
-        const strategy = strategies.find(s => s.strategy_id === trade.strategy_id);
-        return strategy?.instrument_pair === tenorPairFilter;
-      });
-    }
-    
     return filtered;
   }, [trades, searchTerm, actionFilter, tenorFilter, forwardSpotFilter, 
-      strategyTypeFilter, platformFilter, tenorPairFilter, strategies]);
+      strategyTypeFilter, platformFilter, strategies]);
 
   // Calculate visible columns
   const visibleColumns = useMemo(() => {
@@ -414,20 +396,6 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
                 <option key={platform} value={platform}>{platform}</option>
               ))}
             </select>
-            
-            {/* Instrument Pair Filter (existing) */}
-            {uniqueInstrumentPairs.length > 0 && (
-              <select
-                value={tenorPairFilter}
-                onChange={(e) => setTenorPairFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-              >
-                <option value="all">All Instrument Pairs</option>
-                {uniqueInstrumentPairs.map(pair => (
-                  <option key={pair} value={pair}>{pair}</option>
-                ))}
-              </select>
-            )}
           </div>
         )}
         

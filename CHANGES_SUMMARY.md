@@ -81,3 +81,29 @@ Utiliser directement les champs `instrument` et `product` fournis par l'API inte
 - `instrument` (ex: "10Y", "5Y10Y") remplace `tenor`
 - `Product` (ex: "Spread", "Butterfly") utilisé quand disponible
 - `instrument_pair` (ex: "10Y/30Y") remplace `tenor_pair`
+
+## Correction supplémentaire - Suppression de instrument_pair
+
+### Contexte
+Le champ `instrument` contient déjà l'information complète (ex: "10Y/30Y" pour un spread), rendant `instrument_pair` et `instrument_legs` redondants.
+
+### Modifications supplémentaires
+
+#### Backend
+- **models.py**: Suppression des champs `instrument_pair` et `instrument_legs` de Strategy
+- **poller.py**: Suppression de la logique de génération de `instrument_pair`
+- **analytics_engine.py**: `instrument_pair_distribution` → `instrument_distribution`
+- **excel_writer.py**: Suppression de la colonne "Instrument Pair" dans l'Excel
+
+#### Frontend
+- **types/trade.ts**: Suppression de `instrument_pair` et `instrument_legs` de Strategy et StrategyMetrics
+- **Blotter.tsx**: Suppression du filtre par instrument pair
+- **TradeRow.tsx**: Simplification - utilise directement `strategy_type`
+- **StrategyRow.tsx**: Simplification - utilise directement `strategy_type`
+- **CurveAnalysis.tsx**: `instrument_pair_distribution` → `instrument_distribution`
+
+### Résultat final
+- **`instrument`** de l'API est utilisé directement (ex: "10Y", "10Y/30Y")
+- **`Product`** de l'API est utilisé pour le type de stratégie (ex: "Spread", "Butterfly")
+- **`strategy_type`** contient le type complet quand disponible
+- Aucun calcul ou formatage local n'est nécessaire

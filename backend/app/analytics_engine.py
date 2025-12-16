@@ -416,31 +416,37 @@ class AnalyticsEngine:
             "custom": custom_count
         }
         
-        # NEW: Instrument pair statistics
-        instrument_pair_stats = defaultdict(lambda: {"count": 0, "total_notional": 0.0})
+        # NEW: Instrument statistics (from trades in strategies)
+        instrument_stats = defaultdict(lambda: {"count": 0, "total_notional": 0.0})
         for strategy in strategies:
-            if strategy.instrument_pair:
-                instrument_pair_stats[strategy.instrument_pair]["count"] += 1
-                instrument_pair_stats[strategy.instrument_pair]["total_notional"] += strategy.total_notional_eur
+            # Get instruments from trades in this strategy
+            strategy_trades = [t for t in trades if t.dissemination_identifier in strategy.legs]
+            instruments = [t.instrument for t in strategy_trades if t.instrument]
+            unique_instruments = list(set(instruments))
+            
+            # Use the first instrument found or strategy type as key
+            instrument_key = unique_instruments[0] if unique_instruments else strategy.strategy_type
+            instrument_stats[instrument_key]["count"] += 1
+            instrument_stats[instrument_key]["total_notional"] += strategy.total_notional_eur
         
         # Format for output
-        instrument_pair_distribution = [
+        instrument_distribution = [
             {
-                "instrument_pair": pair,
+                "instrument": instrument,
                 "count": stats["count"],
                 "total_notional": stats["total_notional"],
                 "avg_notional": stats["total_notional"] / stats["count"] if stats["count"] > 0 else 0
             }
-            for pair, stats in instrument_pair_stats.items()
+            for instrument, stats in instrument_stats.items()
         ]
         # Sort by count descending
-        instrument_pair_distribution.sort(key=lambda x: x["count"], reverse=True)
+        instrument_distribution.sort(key=lambda x: x["count"], reverse=True)
         
         return {
             "strategy_avg_notional": strategy_avg_notional,
             "strategy_instrument_preference": strategy_instrument_preference,
             "package_vs_custom": package_vs_custom,
-            "instrument_pair_distribution": instrument_pair_distribution
+            "instrument_distribution": instrument_distribution
         }
 
     # ============================================================================

@@ -347,20 +347,6 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
             # Extract underlying name from strategy or first leg
             underlying_name = response_data.Underlier or (leg_trades[0].unique_product_identifier_underlier_name if leg_trades else "Unknown")
             
-            # Extract instruments from strategy and trades
-            instruments = []
-            
-            # Use instrument from strategy level (this is the maturity of the swap)
-            if response_data.instrument:
-                instruments.append(response_data.instrument)
-            
-            # Also get instruments from trades
-            trade_instruments = [t.instrument for t in leg_trades if t.instrument]
-            instruments.extend(trade_instruments)
-            
-            unique_instruments = sorted(list(set(instruments))) if instruments else []
-            instrument_pair = "/".join(unique_instruments) if unique_instruments else None
-            
             # Use Product from API if available, otherwise classify based on leg count
             if response_data.Product:
                 strategy_type = response_data.Product
@@ -377,10 +363,6 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
                     strategy_type = "Curve"
                 else:
                     strategy_type = "Package"
-                
-                # Add instrument pair if available
-                if instrument_pair:
-                    strategy_type = f"{instrument_pair} {strategy_type}"
             
             # Calculate total notional
             total_notional = response_data.Notional or response_data.Notionaltruncated
@@ -419,9 +401,7 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
                 total_notional_eur=total_notional,
                 execution_start=execution_start,
                 execution_end=execution_end,
-                package_transaction_price=package_transaction_price,
-                instrument_pair=instrument_pair,
-                instrument_legs=unique_instruments if unique_instruments else None
+                package_transaction_price=package_transaction_price
             )
         
     except Exception as e:
@@ -464,11 +444,6 @@ def convert_internal_api_response(response_data: InternalAPIResponse) -> Tuple[L
             # Extract underlying name from first leg
             underlying_name = leg_trades[0].unique_product_identifier_underlier_name or "Unknown"
             
-            # Extract instruments
-            instruments = [t.instrument for t in leg_trades if t.instrument]
-            unique_instruments = sorted(list(set(instruments))) if instruments else []
-            instrument_pair = "/".join(unique_instruments) if unique_instruments else None
-            
             # Classify strategy type
             num_legs = len(leg_trades)
             if num_legs == 2:
@@ -479,9 +454,6 @@ def convert_internal_api_response(response_data: InternalAPIResponse) -> Tuple[L
                 strategy_type = "Curve"
             else:
                 strategy_type = "Package"
-            
-            if instrument_pair:
-                strategy_type = f"{instrument_pair} {strategy_type}"
             
             # Calculate total notional
             total_notional = sum(t.notional_eur or t.notional_amount_leg1 for t in leg_trades)
@@ -494,9 +466,7 @@ def convert_internal_api_response(response_data: InternalAPIResponse) -> Tuple[L
                 total_notional_eur=total_notional,
                 execution_start=min(t.execution_timestamp for t in leg_trades),
                 execution_end=max(t.execution_timestamp for t in leg_trades),
-                package_transaction_price=None,
-                instrument_pair=instrument_pair,
-                instrument_legs=unique_instruments if unique_instruments else None
+                package_transaction_price=None
             )
         
     except Exception as e:

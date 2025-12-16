@@ -260,8 +260,6 @@ class Strategy(BaseModel):
         execution_start: Timestamp of the first leg execution
         execution_end: Timestamp of the last leg execution
         package_transaction_price: Package price if applicable
-        instrument_pair: Formatted instrument pair (e.g., "10Y/30Y" for a spread)
-        instrument_legs: List of individual instruments in the strategy (e.g., ["10Y", "30Y"])
     """
     strategy_id: str
     strategy_type: str  # Spread, Butterfly, Curve
@@ -271,10 +269,6 @@ class Strategy(BaseModel):
     execution_start: datetime
     execution_end: datetime
     package_transaction_price: Optional[str] = None
-    
-    # Instrument pair information
-    instrument_pair: Optional[str] = None  # "10Y/30Y", "2Y/5Y/10Y", etc.
-    instrument_legs: Optional[List[str]] = None  # ["10Y", "30Y"]
 
 
 class Alert(BaseModel):
@@ -351,7 +345,7 @@ class StrategyMetrics(BaseModel):
     strategy_avg_notional: List[dict]  # [{"type": str, "avg_notional": float}]
     strategy_instrument_preference: List[dict]  # [{"type": str, "instruments": List[str]}]
     package_vs_custom: Dict[str, int]  # {"package": count, "custom": count}
-    instrument_pair_distribution: List[dict]  # [{"instrument_pair": "10Y/30Y", "count": 5, "total_notional": 1000000000, "avg_notional": 200000000}]
+    instrument_distribution: List[dict]  # [{"instrument": "10Y/30Y", "count": 5, "total_notional": 1000000000, "avg_notional": 200000000}]
 
 
 class Analytics(BaseModel):

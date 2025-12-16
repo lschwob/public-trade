@@ -60,8 +60,6 @@ export interface Strategy {
   execution_start: string;
   execution_end: string;
   package_transaction_price?: string;
-  instrument_pair?: string;       // "10Y/30Y"
-  instrument_legs?: string[];     // ["10Y", "30Y"]
 }
 
 export interface Alert {
@@ -116,7 +114,7 @@ export interface StrategyMetrics {
   strategy_avg_notional: Array<{ type: string; avg_notional: number }>;
   strategy_instrument_preference: Array<{ type: string; instruments: string[] }>;
   package_vs_custom: Record<string, number>;
-  instrument_pair_distribution: Array<{ instrument_pair: string; count: number; total_notional: number; avg_notional: number }>;
+  instrument_distribution: Array<{ instrument: string; count: number; total_notional: number; avg_notional: number }>;
 }
 
 export interface Analytics {

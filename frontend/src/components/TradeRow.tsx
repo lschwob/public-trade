@@ -183,19 +183,8 @@ export default function TradeRow({
             return 'Outright';
           }
           
-          // Format instrument pair with 's' notation (10s30s instead of 10Y/30Y)
-          const instrumentPair = strategy.instrument_pair
-            ?.replace(/Y/g, 's')
-            .replace(/\//g, '');
-          
-          // Get strategy type base (Spread, Butterfly, Curve)
-          const baseType = strategy.strategy_type.split(' ').pop() || strategy.strategy_type;
-          
-          // Return formatted label
-          if (instrumentPair) {
-            return `${baseType} ${instrumentPair}`;
-          }
-          return baseType;
+          // Return strategy type directly from API (already contains instrument if needed)
+          return strategy.strategy_type;
         };
         
         const strategy = strategies.find(s => s.strategy_id === trade.strategy_id);
