@@ -19,6 +19,7 @@
 import { memo } from 'react';
 import { Trade, Strategy } from '../types/trade';
 import { ColumnConfig } from './Blotter';
+import { getTenorFromTrade } from '../utils/underlierTenor';
 
 /**
  * Props for the TradeRow component.
@@ -141,6 +142,13 @@ function TradeRowComponent({
         );
       
       case 'tenor':
+        return (
+          <div className="text-gray-600 text-xs">
+            {getTenorFromTrade(trade)}
+          </div>
+        );
+
+      case 'instrument':
         return (
           <div className="text-gray-600 text-xs">
             {trade.instrument || '-'}

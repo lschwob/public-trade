@@ -9,6 +9,7 @@ import { memo } from 'react';
 import { Trade, Strategy } from '../types/trade';
 import { ColumnConfig } from './Blotter';
 import TradeRow from './TradeRow';
+import { extractUnderlierTenor, getTenorFromTrade } from '../utils/underlierTenor';
 
 /**
  * Props for the StrategyRow component.
@@ -112,12 +113,16 @@ function StrategyRowComponent({
         );
       
       case 'tenor':
-        // Extract instrument from strategy type if present (e.g., "10Y/30Y Spread" -> "10Y/30Y")
-        const tenorMatch = strategy.strategy_type.match(/^([\dYM\/]+)\s/);
-        const tenor = tenorMatch ? tenorMatch[1] : '-';
         return (
           <div className="text-gray-600 text-xs">
-            {tenor}
+            {extractUnderlierTenor(strategy.underlying_name) ?? getTenorFromTrade(firstTrade)}
+          </div>
+        );
+
+      case 'instrument':
+        return (
+          <div className="text-gray-600 text-xs">
+            {firstTrade.instrument || '-'}
           </div>
         );
       

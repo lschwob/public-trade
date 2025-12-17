@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { InstrumentDetail, ProTraderMetrics } from '../../types/trade';
 import AlertBadge from '../charts/AlertBadge';
 import OrderFlowBar from '../charts/OrderFlowBar';
@@ -37,9 +37,28 @@ function sumInstrumentMetric(metrics: Record<string, InstrumentDetail> | undefin
 export default function ProTrader({ proTraderMetrics }: ProTraderProps) {
   const [activeWindow, setActiveWindow] = useState<TimeWindow>('15min');
 
-  const current = proTraderMetrics?.[activeWindow];
-  const m15 = proTraderMetrics?.['15min'];
-  const m30 = proTraderMetrics?.['30min'];
+  // Cache last known good metrics so the tab doesn't go blank during reloads.
+  const cacheRef = useRef<Record<string, ProTraderMetrics>>({});
+
+  useEffect(() => {
+    if (!proTraderMetrics) return;
+    for (const [k, v] of Object.entries(proTraderMetrics)) {
+      if (!v) continue;
+      const hasData =
+        (v.alerts?.length ?? 0) > 0 ||
+        (v.flow_metrics?.new_trades_count ?? 0) > 0 ||
+        Object.keys(v.instrument_metrics ?? {}).length > 0;
+      if (hasData) cacheRef.current[k] = v;
+    }
+  }, [proTraderMetrics]);
+
+  const getMetrics = (w: TimeWindow): ProTraderMetrics | undefined => {
+    return proTraderMetrics?.[w] ?? cacheRef.current[w];
+  };
+
+  const current = getMetrics(activeWindow);
+  const m15 = getMetrics('15min');
+  const m30 = getMetrics('30min');
 
   const totals = useMemo(() => {
     const totalVolume = sumInstrumentMetric(current?.instrument_metrics, d => d.volume);
@@ -108,7 +127,7 @@ export default function ProTrader({ proTraderMetrics }: ProTraderProps) {
   if (!current) {
     return (
       <div className="flex items-center justify-center h-full text-gray-500">
-        No pro trader data available
+        Loading pro trader data...
       </div>
     );
   }

@@ -43,7 +43,8 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'action', label: 'Action', visible: true, width: 90 },
   { id: 'underlying', label: 'Underlying', visible: true, width: 200 },
   { id: 'notional', label: 'Notional', visible: true, width: 140 },
-  { id: 'tenor', label: 'Instrument', visible: true, width: 100 },  // Renamed from "Tenor" to "Instrument"
+  { id: 'tenor', label: 'Tenor', visible: true, width: 90 },
+  { id: 'instrument', label: 'Instrument', visible: true, width: 100 },
   { id: 'rate', label: 'Rate', visible: true, width: 120 },
   { id: 'package', label: 'Package', visible: true, width: 100 },
   { id: 'strategy', label: 'Strategy', visible: true, width: 220 },
@@ -70,7 +71,64 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
   const [expandedStrategies, setExpandedStrategies] = useState<Set<string>>(new Set());
   const [columns, setColumns] = useState<ColumnConfig[]>(() => {
     const saved = localStorage.getItem('blotter-columns');
-    return saved ? JSON.parse(saved) : DEFAULT_COLUMNS;
+    if (!saved) return DEFAULT_COLUMNS;
+    try {
+      const parsed = JSON.parse(saved) as ColumnConfig[];
+
+      // Migration:
+      // - older versions used id 'tenor' to display maturity instrument
+      // - new versions split into {tenor} (index tenor) and {instrument} (maturity)
+      const migrated = parsed.map((c) => {
+        if (c.id === 'tenor' && (c.label === 'Instrument' || c.label === 'Tenor')) {
+          // If there's already an 'instrument' column in saved state, keep as-is.
+          // Otherwise repurpose old 'tenor' into 'instrument'.
+          const hasInstrument = parsed.some(x => x.id === 'instrument');
+          if (!hasInstrument) {
+            return { ...c, id: 'instrument', label: 'Instrument' };
+          }
+        }
+        return c;
+      });
+
+      const byId = new Map(migrated.map(c => [c.id, c]));
+      const ensure = (id: string) => {
+        if (!byId.has(id)) {
+          const def = DEFAULT_COLUMNS.find(c => c.id === id);
+          if (def) byId.set(id, def);
+        }
+      };
+
+      ensure('tenor');
+      ensure('instrument');
+
+      // Keep saved order, then append any new defaults not present
+      const ordered: ColumnConfig[] = [];
+      const seen = new Set<string>();
+      for (const c of migrated) {
+        if (!seen.has(c.id)) {
+          ordered.push(c);
+          seen.add(c.id);
+        }
+      }
+      for (const def of DEFAULT_COLUMNS) {
+        if (!seen.has(def.id)) ordered.push(def);
+      }
+
+      // If tenor was newly inserted, place it right after underlying for UX
+      const hasTenor = ordered.some(c => c.id === 'tenor');
+      if (hasTenor) {
+        const idxUnderlying = ordered.findIndex(c => c.id === 'underlying');
+        const idxTenor = ordered.findIndex(c => c.id === 'tenor');
+        if (idxUnderlying >= 0 && idxTenor >= 0 && idxTenor !== idxUnderlying + 1) {
+          const [tenorCol] = ordered.splice(idxTenor, 1);
+          ordered.splice(idxUnderlying + 1, 0, tenorCol);
+        }
+      }
+
+      return ordered;
+    } catch {
+      return DEFAULT_COLUMNS;
+    }
   });
   const [showColumnSelector, setShowColumnSelector] = useState(false);
   const prevTradeIdsRef = useRef<Set<string>>(new Set());
