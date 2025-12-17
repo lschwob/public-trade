@@ -1,15 +1,10 @@
 /**
  * Blotter component for real-time trade display.
  * 
- * This component displays trades in a table format with:
- * - Real-time updates via WebSocket
- * - Advanced filtering (Action, Tenor, Forward/Spot, Strategy Type, Platform, Tenor Pair)
- * - Column visibility customization (persisted in localStorage)
- * - Trade grouping (trades with same timestamp/underlying)
- * - Auto-scroll with highlighting for new trades
- * - Fixed column widths for consistent layout
- * 
- * The blotter groups trades by strategy when available (from API pre-classification).
+ * DESIGN GOALS: High-density, High-contrast, Speed.
+ * - Dark header, clear data rows.
+ * - Monospace numbers.
+ * - minimal whitespace.
  */
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
@@ -36,96 +31,43 @@ export interface ColumnConfig {
   label: string;
   visible: boolean;
   width: number; // Width in pixels or flex value
+  align?: 'left' | 'right' | 'center';
 }
 
 const DEFAULT_COLUMNS: ColumnConfig[] = [
-  { id: 'time', label: 'Time', visible: true, width: 110 },
-  { id: 'action', label: 'Action', visible: true, width: 90 },
-  { id: 'underlying', label: 'Underlying', visible: true, width: 200 },
-  { id: 'notional', label: 'Notional', visible: true, width: 140 },
-  { id: 'tenor', label: 'Tenor', visible: true, width: 90 },
-  { id: 'instrument', label: 'Instrument', visible: true, width: 100 },
-  { id: 'rate', label: 'Rate', visible: true, width: 120 },
-  { id: 'package', label: 'Package', visible: true, width: 100 },
-  { id: 'strategy', label: 'Strategy', visible: true, width: 220 },
-  { id: 'platform', label: 'Platform', visible: true, width: 110 },
-  { id: 'eur', label: 'EUR', visible: true, width: 120 },
-  { id: 'id', label: 'ID', visible: false, width: 250 },
-  { id: 'currency', label: 'Currency', visible: false, width: 130 },
-  { id: 'maturity', label: 'Maturity', visible: false, width: 130 },
+  { id: 'time', label: 'Time', visible: true, width: 80, align: 'left' },
+  { id: 'action', label: 'Act', visible: true, width: 60, align: 'center' },
+  { id: 'instrument', label: 'Tenor', visible: true, width: 80, align: 'left' }, // Using 'instrument' data for Tenor label as requested
+  { id: 'underlying', label: 'Product', visible: true, width: 180, align: 'left' },
+  { id: 'notional', label: 'Size (EUR)', visible: true, width: 100, align: 'right' },
+  { id: 'rate', label: 'Price', visible: true, width: 80, align: 'right' },
+  { id: 'strategy', label: 'Strategy', visible: true, width: 150, align: 'left' },
+  { id: 'platform', label: 'Venue', visible: true, width: 80, align: 'left' },
+  { id: 'package', label: 'Pkg', visible: true, width: 50, align: 'center' },
+  // Hidden by default
+  { id: 'tenor', label: 'Tenor (Calc)', visible: false, width: 80, align: 'left' },
+  { id: 'eur', label: 'Notional', visible: false, width: 100, align: 'right' },
+  { id: 'id', label: 'Trade ID', visible: false, width: 180, align: 'left' },
+  { id: 'currency', label: 'Ccy', visible: false, width: 60, align: 'center' },
+  { id: 'maturity', label: 'Mat', visible: false, width: 90, align: 'left' },
 ];
 
 export default function Blotter({ trades, strategies = [] }: BlotterProps) {
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Additional filters
+  // Filters
   const [actionFilter, setActionFilter] = useState<string>('all');
   const [tenorFilter, setTenorFilter] = useState<string>('all');
-  const [forwardSpotFilter, setForwardSpotFilter] = useState<string>('all'); // all, forward, spot
-  const [strategyTypeFilter, setStrategyTypeFilter] = useState<string>('all'); // all, outright, spread, butterfly, curve
-  const [platformFilter, setPlatformFilter] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
   const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set());
   const [expandedStrategies, setExpandedStrategies] = useState<Set<string>>(new Set());
   const [columns, setColumns] = useState<ColumnConfig[]>(() => {
-    const saved = localStorage.getItem('blotter-columns');
+    const saved = localStorage.getItem('blotter-columns-v2');
     if (!saved) return DEFAULT_COLUMNS;
     try {
-      const parsed = JSON.parse(saved) as ColumnConfig[];
-
-      // Migration:
-      // - older versions used id 'tenor' to display maturity instrument
-      // - new versions split into {tenor} (index tenor) and {instrument} (maturity)
-      const migrated = parsed.map((c) => {
-        if (c.id === 'tenor' && (c.label === 'Instrument' || c.label === 'Tenor')) {
-          // If there's already an 'instrument' column in saved state, keep as-is.
-          // Otherwise repurpose old 'tenor' into 'instrument'.
-          const hasInstrument = parsed.some(x => x.id === 'instrument');
-          if (!hasInstrument) {
-            return { ...c, id: 'instrument', label: 'Instrument' };
-          }
-        }
-        return c;
-      });
-
-      const byId = new Map(migrated.map(c => [c.id, c]));
-      const ensure = (id: string) => {
-        if (!byId.has(id)) {
-          const def = DEFAULT_COLUMNS.find(c => c.id === id);
-          if (def) byId.set(id, def);
-        }
-      };
-
-      ensure('tenor');
-      ensure('instrument');
-
-      // Keep saved order, then append any new defaults not present
-      const ordered: ColumnConfig[] = [];
-      const seen = new Set<string>();
-      for (const c of migrated) {
-        if (!seen.has(c.id)) {
-          ordered.push(c);
-          seen.add(c.id);
-        }
-      }
-      for (const def of DEFAULT_COLUMNS) {
-        if (!seen.has(def.id)) ordered.push(def);
-      }
-
-      // If tenor was newly inserted, place it right after underlying for UX
-      const hasTenor = ordered.some(c => c.id === 'tenor');
-      if (hasTenor) {
-        const idxUnderlying = ordered.findIndex(c => c.id === 'underlying');
-        const idxTenor = ordered.findIndex(c => c.id === 'tenor');
-        if (idxUnderlying >= 0 && idxTenor >= 0 && idxTenor !== idxUnderlying + 1) {
-          const [tenorCol] = ordered.splice(idxTenor, 1);
-          ordered.splice(idxUnderlying + 1, 0, tenorCol);
-        }
-      }
-
-      return ordered;
+      return JSON.parse(saved);
     } catch {
       return DEFAULT_COLUMNS;
     }
@@ -135,16 +77,15 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
   const [draggedColumn, setDraggedColumn] = useState<number | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<number | null>(null);
 
-  // Save columns to localStorage when changed
+  // Save columns to localStorage
   useEffect(() => {
-    localStorage.setItem('blotter-columns', JSON.stringify(columns));
+    localStorage.setItem('blotter-columns-v2', JSON.stringify(columns));
   }, [columns]);
 
-  // Helper function to sort instruments (using instrumentSort utility)
+  // Helper function to sort instruments
   const sortInstruments = (instruments: string[]): string[] => {
     const instrumentOrder = ["3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"];
     return instruments.sort((a, b) => {
-      // Extract base instrument for sorting (e.g., "10Y" from "5Y10Y")
       const baseA = a.split('/')[0] || a;
       const baseB = b.split('/')[0] || b;
       const indexA = instrumentOrder.indexOf(baseA);
@@ -155,27 +96,19 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
     });
   };
 
-  // Get unique values for filters
-  const uniqueActions = useMemo(() => 
-    Array.from(new Set(trades.map(t => t.action_type).filter(Boolean))).sort(),
-    [trades]
-  );
-
   const uniqueInstruments = useMemo(() => {
     const instruments = Array.from(new Set(trades.map(t => t.instrument).filter((t): t is string => Boolean(t))));
     return sortInstruments(instruments);
   }, [trades]);
 
-  const uniquePlatforms = useMemo(() => 
-    Array.from(new Set(trades.map(t => t.platform_identifier).filter(Boolean))).sort(),
+  const uniqueActions = useMemo(() => 
+    Array.from(new Set(trades.map(t => t.action_type).filter(Boolean))).sort(),
     [trades]
   );
 
-  // Filter trades
   const filteredTrades = useMemo(() => {
     let filtered = trades;
     
-    // Search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(trade => 
@@ -185,56 +118,18 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
       );
     }
     
-    // Action filter
     if (actionFilter !== 'all') {
       filtered = filtered.filter(t => t.action_type === actionFilter);
     }
     
-    // Instrument filter
     if (tenorFilter !== 'all') {
       filtered = filtered.filter(t => t.instrument === tenorFilter);
     }
     
-    // Forward/Spot filter
-    if (forwardSpotFilter === 'forward') {
-      filtered = filtered.filter(t => t.is_forward);
-    } else if (forwardSpotFilter === 'spot') {
-      filtered = filtered.filter(t => !t.is_forward);
-    }
-    
-    // Strategy Type filter
-    if (strategyTypeFilter !== 'all') {
-      if (strategyTypeFilter === 'outright') {
-        // Outright: no package, no strategy (directional trades)
-        filtered = filtered.filter(t => !t.package_indicator && !t.strategy_id);
-      } else if (strategyTypeFilter === 'multiline_compression') {
-        // Multiline Compression: package but no strategy detected
-        filtered = filtered.filter(t => t.package_indicator && !t.strategy_id);
-      } else {
-        // Other strategy types: spread, butterfly, curve
-        filtered = filtered.filter(t => {
-          if (!t.strategy_id) return false;
-          const strategy = strategies.find(s => s.strategy_id === t.strategy_id);
-          if (!strategy) return false;
-          const baseType = strategy.strategy_type.split(' ').pop()?.toLowerCase();
-          return baseType === strategyTypeFilter;
-        });
-      }
-    }
-    
-    // Platform filter
-    if (platformFilter !== 'all') {
-      filtered = filtered.filter(t => t.platform_identifier === platformFilter);
-    }
-    
     return filtered;
-  }, [trades, searchTerm, actionFilter, tenorFilter, forwardSpotFilter, 
-      strategyTypeFilter, platformFilter, strategies]);
+  }, [trades, searchTerm, actionFilter, tenorFilter]);
 
-  // Calculate visible columns
-  const visibleColumns = useMemo(() => {
-    return columns.filter(col => col.visible);
-  }, [columns]);
+  const visibleColumns = useMemo(() => columns.filter(col => col.visible), [columns]);
 
   // Highlight new trades
   useEffect(() => {
@@ -248,7 +143,7 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
 
     if (newlyAdded.length > 0) {
       setHighlightedIds(new Set(newlyAdded));
-      setTimeout(() => setHighlightedIds(new Set()), 3000);
+      setTimeout(() => setHighlightedIds(new Set()), 2000);
     }
 
     prevTradeIdsRef.current = next;
@@ -257,11 +152,8 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
   const toggleExpand = useCallback((tradeId: string) => {
     setExpandedTrades(prev => {
       const next = new Set(prev);
-      if (next.has(tradeId)) {
-        next.delete(tradeId);
-      } else {
-        next.add(tradeId);
-      }
+      if (next.has(tradeId)) next.delete(tradeId);
+      else next.add(tradeId);
       return next;
     });
   }, []);
@@ -269,16 +161,13 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
   const toggleStrategyExpand = useCallback((strategyId: string) => {
     setExpandedStrategies(prev => {
       const next = new Set(prev);
-      if (next.has(strategyId)) {
-        next.delete(strategyId);
-      } else {
-        next.add(strategyId);
-      }
+      if (next.has(strategyId)) next.delete(strategyId);
+      else next.add(strategyId);
       return next;
     });
   }, []);
 
-  // Drag & Drop handlers for columns
+  // Drag & Drop
   const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
     setDraggedColumn(index);
     e.dataTransfer.effectAllowed = 'move';
@@ -300,12 +189,8 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
     setDragOverColumn(null);
   }, [draggedColumn, dragOverColumn, columns]);
 
-  const strategiesById = useMemo(() => {
-    return new Map(strategies.map(s => [s.strategy_id, s]));
-  }, [strategies]);
+  const strategiesById = useMemo(() => new Map(strategies.map(s => [s.strategy_id, s])), [strategies]);
 
-  // Display trades in current order (already newest-first from cache),
-  // but group strategy legs efficiently (no O(n^2) filters).
   const displayTrades = useMemo(() => {
     const strategyTrades = new Map<string, Trade[]>();
     for (const t of filteredTrades) {
@@ -332,223 +217,142 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
     return result;
   }, [filteredTrades, strategiesById]);
 
-
   return (
-    <div className="flex flex-col h-full bg-white">
-      {/* Toolbar */}
-      <div className="px-6 py-3 border-b border-gray-200 bg-white">
-        <div className="flex items-center justify-between gap-4 mb-2">
-          <div className="flex-1">
-            <input
+    <div className="flex flex-col h-full bg-[#1e2329] text-gray-200 font-sans">
+      {/* Compact Toolbar */}
+      <div className="px-4 py-2 border-b border-gray-700 bg-[#2b3139] flex items-center justify-between gap-3 shadow-md z-20">
+        <div className="flex items-center gap-3 flex-1">
+           <div className="relative group">
+             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+               <span className="text-gray-500 text-xs">🔍</span>
+             </div>
+             <input
               type="text"
-              placeholder="Search by underlying, strategy ID, or trade ID..."
+              placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-50/60"
+              className="pl-8 pr-3 py-1 bg-[#1e2329] border border-gray-600 rounded text-xs text-gray-200 focus:outline-none focus:border-blue-500 w-48 transition-all"
             />
-          </div>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700"
-          >
-            {showFilters ? '▲' : '▼'} Filters
-          </button>
+           </div>
+           
+           {/* Quick Filters */}
+           <div className="flex gap-2">
+             <select 
+                value={actionFilter}
+                onChange={(e) => setActionFilter(e.target.value)}
+                className="bg-[#1e2329] border border-gray-600 text-xs rounded px-2 py-1 text-gray-300 focus:border-blue-500 outline-none"
+             >
+               <option value="all">All Actions</option>
+               {uniqueActions.map(a => <option key={a} value={a}>{a}</option>)}
+             </select>
+             
+             <select 
+                value={tenorFilter}
+                onChange={(e) => setTenorFilter(e.target.value)}
+                className="bg-[#1e2329] border border-gray-600 text-xs rounded px-2 py-1 text-gray-300 focus:border-blue-500 outline-none"
+             >
+               <option value="all">All Tenors</option>
+               {uniqueInstruments.map(i => <option key={i} value={i}>{i}</option>)}
+             </select>
+           </div>
+        </div>
+
+        <div className="flex gap-2">
           <button
             onClick={() => setShowColumnSelector(!showColumnSelector)}
-            className="px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700"
+            className="px-3 py-1 bg-[#1e2329] border border-gray-600 rounded hover:bg-gray-700 text-xs text-gray-300 transition-colors"
           >
             Columns
           </button>
         </div>
-        
-        {/* Expandable Filters */}
-        {showFilters && (
-          <div className="grid grid-cols-6 gap-3 pt-3 border-t border-gray-300">
-            {/* Action Filter */}
-            <select
-              value={actionFilter}
-              onChange={(e) => setActionFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-            >
-              <option value="all">All Actions</option>
-              {uniqueActions.map(action => (
-                <option key={action} value={action}>{action}</option>
-              ))}
-            </select>
-            
-            {/* Instrument Filter */}
-            <select
-              value={tenorFilter}
-              onChange={(e) => setTenorFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-            >
-              <option value="all">All Instruments</option>
-              {uniqueInstruments.map(instrument => (
-                <option key={instrument} value={instrument}>{instrument}</option>
-              ))}
-            </select>
-            
-            {/* Forward/Spot Filter */}
-            <select
-              value={forwardSpotFilter}
-              onChange={(e) => setForwardSpotFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-            >
-              <option value="all">All Trades</option>
-              <option value="spot">Spot</option>
-              <option value="forward">Forward</option>
-            </select>
-            
-            {/* Strategy Type Filter */}
-            <select
-              value={strategyTypeFilter}
-              onChange={(e) => setStrategyTypeFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-            >
-              <option value="all">All Strategies</option>
-              <option value="outright">Outright</option>
-              <option value="multiline_compression">Multiline Compression</option>
-              <option value="spread">Spread</option>
-              <option value="butterfly">Butterfly</option>
-              <option value="curve">Curve</option>
-            </select>
-            
-            {/* Platform Filter */}
-            <select
-              value={platformFilter}
-              onChange={(e) => setPlatformFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-            >
-              <option value="all">All Platforms</option>
-              {uniquePlatforms.map(platform => (
-                <option key={platform} value={platform}>{platform}</option>
-              ))}
-            </select>
-          </div>
-        )}
-        
-        {/* Column Selector */}
-        {showColumnSelector && (
-          <div className="mt-3">
-            <ColumnSelector
-              columns={columns}
-              onColumnsChange={setColumns}
-              onClose={() => setShowColumnSelector(false)}
-            />
-          </div>
-        )}
       </div>
 
-      {/* Table Container with Fixed Width Columns */}
-      <div className="flex-1 overflow-auto bg-gray-50">
-        {displayTrades.length > 0 ? (
-          <div className="bg-white">
-            {/* Table Header */}
-            <div className="sticky top-0 z-10 bg-gradient-to-r from-gray-100 to-gray-50 border-b-2 border-gray-300 shadow-sm">
-            <table className="w-full border-collapse" style={{ tableLayout: 'fixed', width: '100%' }}>
-              <colgroup>
-                {visibleColumns.map(col => (
-                  <col key={col.id} style={{ width: `${col.width}px`, minWidth: `${col.width}px`, maxWidth: `${col.width}px` }} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr>
-                  {visibleColumns.map((col, index) => (
-                    <th
-                      key={col.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, index)}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDragEnd={handleDragEnd}
-                      className={`px-3 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide border-r border-gray-300 bg-gray-100 overflow-hidden cursor-move transition-all ${
-                        draggedColumn === index ? 'opacity-50' : ''
-                      } ${
-                        dragOverColumn === index && draggedColumn !== index ? 'border-l-4 border-l-blue-500' : ''
-                      }`}
-                      style={{ width: `${col.width}px`, maxWidth: `${col.width}px` }}
-                      title="Drag to reorder columns"
-                    >
-                      <div className="truncate flex items-center gap-1">
-                        <span className="text-gray-400">⋮⋮</span>
-                        {col.label}
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              </table>
-            </div>
+      {showColumnSelector && (
+        <div className="absolute top-12 right-4 z-50">
+           <ColumnSelector columns={columns} onColumnsChange={setColumns} onClose={() => setShowColumnSelector(false)} />
+        </div>
+      )}
 
-            {/* Table Body */}
-            <table className="w-full border-collapse" style={{ tableLayout: 'fixed', width: '100%' }}>
-              <colgroup>
-                {visibleColumns.map(col => (
-                  <col key={col.id} style={{ width: `${col.width}px` }} />
+      {/* Table Header - Sticky & Dense */}
+      <div className="flex-1 overflow-auto bg-[#1e2329] scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
+        <div className="min-w-full inline-block align-middle">
+          <table className="min-w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+            <colgroup>
+               {visibleColumns.map(col => (
+                 <col key={col.id} style={{ width: `${col.width}px` }} />
+               ))}
+            </colgroup>
+            <thead className="sticky top-0 z-10 bg-[#2b3139] shadow-sm">
+              <tr>
+                {visibleColumns.map((col, index) => (
+                  <th
+                    key={col.id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, index)}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDragEnd={handleDragEnd}
+                    className={`px-2 py-2 text-${col.align || 'left'} text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-700 select-none cursor-move hover:text-white transition-colors ${
+                       draggedColumn === index ? 'opacity-50' : ''
+                    } ${
+                       dragOverColumn === index && draggedColumn !== index ? 'border-l-2 border-l-blue-500' : ''
+                    }`}
+                  >
+                    {col.label}
+                  </th>
                 ))}
-              </colgroup>
-              <tbody>
-                {displayTrades.map((item) => {
-                  // Check if this is a strategy group
-                  if ('type' in item && item.type === 'strategy') {
-                    const { strategy, trades } = item;
-                    const isExpanded = expandedStrategies.has(strategy.strategy_id);
-                    const isHighlighted = trades.some(t => highlightedIds.has(t.dissemination_identifier));
-                    
-                    return (
-                      <StrategyRow
-                        key={`strategy-${strategy.strategy_id}`}
-                        strategy={strategy}
-                        trades={trades}
-                        highlighted={isHighlighted}
-                        isExpanded={isExpanded}
-                        onToggleExpand={() => toggleStrategyExpand(strategy.strategy_id)}
-                        visibleColumns={visibleColumns}
-                        strategies={strategies}
-                      />
-                    );
-                  }
-                  
-                  // Regular trade
-                  const trade = item as Trade;
-                  const isHighlighted = highlightedIds.has(trade.dissemination_identifier);
-                  const isExpanded = expandedTrades.has(trade.dissemination_identifier);
-                  const hasLegs = trade.package_indicator && trade.package_legs && trade.package_legs.length > 0;
-                  
+              </tr>
+            </thead>
+            <tbody className="bg-[#1e2329]">
+              {displayTrades.map((item, rowIdx) => {
+                if ('type' in item && item.type === 'strategy') {
+                  const { strategy, trades } = item;
                   return (
-                    <TradeRow
-                      key={trade.dissemination_identifier}
-                      trade={trade}
-                      highlighted={isHighlighted}
-                      isExpanded={isExpanded}
-                      hasLegs={hasLegs}
-                      onToggleExpand={() => toggleExpand(trade.dissemination_identifier)}
+                    <StrategyRow
+                      key={`strategy-${strategy.strategy_id}`}
+                      strategy={strategy}
+                      trades={trades}
+                      highlighted={trades.some(t => highlightedIds.has(t.dissemination_identifier))}
+                      isExpanded={expandedStrategies.has(strategy.strategy_id)}
+                      onToggleExpand={() => toggleStrategyExpand(strategy.strategy_id)}
                       visibleColumns={visibleColumns}
                       strategies={strategies}
+                      rowIdx={rowIdx}
                     />
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center h-full text-gray-500">
-            <div className="text-center">
-              <div className="text-4xl mb-2">📊</div>
-              <div className="text-lg font-medium">No trades found</div>
-            </div>
-          </div>
-        )}
+                }
+                
+                const trade = item as Trade;
+                return (
+                  <TradeRow
+                    key={trade.dissemination_identifier}
+                    trade={trade}
+                    highlighted={highlightedIds.has(trade.dissemination_identifier)}
+                    isExpanded={expandedTrades.has(trade.dissemination_identifier)}
+                    hasLegs={trade.package_indicator && trade.package_legs && trade.package_legs.length > 0}
+                    onToggleExpand={() => toggleExpand(trade.dissemination_identifier)}
+                    visibleColumns={visibleColumns}
+                    strategies={strategies}
+                    rowIdx={rowIdx}
+                  />
+                );
+              })}
+              
+              {displayTrades.length === 0 && (
+                <tr>
+                  <td colSpan={visibleColumns.length} className="px-6 py-12 text-center text-gray-500 text-sm">
+                    No trades match your criteria
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-
-      {/* Footer */}
-      <div className="px-6 py-2 bg-gray-50 border-t border-gray-200 text-sm text-gray-600 flex items-center justify-between">
-        <div>
-          Showing <span className="font-semibold">{filteredTrades.length}</span> of <span className="font-semibold">{trades.length}</span> trades
-        </div>
-        <div className="text-xs text-gray-500">
-          {expandedTrades.size > 0 && `${expandedTrades.size} package${expandedTrades.size > 1 ? 's' : ''} expanded`}
-          {expandedStrategies.size > 0 && ` | ${expandedStrategies.size} strateg${expandedStrategies.size > 1 ? 'ies' : 'y'} expanded`}
-        </div>
+      
+      {/* Footer Status */}
+      <div className="bg-[#2b3139] px-4 py-1 text-[10px] text-gray-400 border-t border-gray-700 flex justify-between">
+         <span>{filteredTrades.length} Rows</span>
+         <span className="font-mono">LIVE</span>
       </div>
     </div>
   );
