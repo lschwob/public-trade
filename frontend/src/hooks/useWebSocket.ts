@@ -142,6 +142,31 @@ export function useWebSocket() {
     setStrategies(Array.from(strategyCacheRef.current.values()));
   };
 
+  // Batch UI updates so a burst of WS messages doesn't re-render row-by-row.
+  const flushHandleRef = useRef<number | null>(null);
+  const pendingTradesRef = useRef(false);
+  const pendingStrategiesRef = useRef(false);
+
+  const scheduleFlush = () => {
+    if (flushHandleRef.current !== null) return;
+    const flush = () => {
+      flushHandleRef.current = null;
+      const shouldEmitTrades = pendingTradesRef.current;
+      const shouldEmitStrategies = pendingStrategiesRef.current;
+      pendingTradesRef.current = false;
+      pendingStrategiesRef.current = false;
+
+      if (shouldEmitTrades) emitTradesFromCache();
+      if (shouldEmitStrategies) emitStrategiesFromCache();
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      flushHandleRef.current = window.requestAnimationFrame(flush);
+    } else {
+      flushHandleRef.current = window.setTimeout(flush, 16) as unknown as number;
+    }
+  };
+
   const upsertTrade = (trade: Trade, { allowReorder }: { allowReorder: boolean }): boolean => {
     const id = trade.dissemination_identifier;
     const fp = fingerprintTrade(trade);
@@ -265,8 +290,9 @@ export function useWebSocket() {
                 const tradesChanged = upsertTrades(incomingTrades, { allowReorder: true });
                 const strategiesChanged = upsertStrategies(incomingStrategies);
 
-                if (tradesChanged) emitTradesFromCache();
-                if (strategiesChanged) emitStrategiesFromCache();
+                if (tradesChanged) pendingTradesRef.current = true;
+                if (strategiesChanged) pendingStrategiesRef.current = true;
+                if (tradesChanged || strategiesChanged) scheduleFlush();
               }
               if (message.data.analytics) {
                 setAnalytics(message.data.analytics);
@@ -278,7 +304,8 @@ export function useWebSocket() {
                 const newTrade = message.data as Trade;
                 if (upsertTrade(newTrade, { allowReorder: true })) {
                   pruneTrades();
-                  emitTradesFromCache();
+                  pendingTradesRef.current = true;
+                  scheduleFlush();
                 }
               }
               break;
@@ -289,7 +316,8 @@ export function useWebSocket() {
                 // Updates should not reorder unless timestamp changed.
                 if (upsertTrade(updatedTrade, { allowReorder: true })) {
                   pruneTrades();
-                  emitTradesFromCache();
+                  pendingTradesRef.current = true;
+                  scheduleFlush();
                 }
               }
               break;
@@ -298,7 +326,8 @@ export function useWebSocket() {
               {
                 const strategy = message.data as Strategy;
                 if (upsertStrategy(strategy)) {
-                  emitStrategiesFromCache();
+                  pendingStrategiesRef.current = true;
+                  scheduleFlush();
                 }
               }
               break;
