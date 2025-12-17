@@ -83,7 +83,6 @@ export default function Dashboard({ analytics }: DashboardProps) {
         {activeTab === 'protrader' && (
           <ProTrader 
             proTraderMetrics={analytics.pro_trader_metrics}
-            proTraderDeltas={analytics.pro_trader_deltas}
           />
         )}
       </div>
