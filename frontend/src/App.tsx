@@ -1,13 +1,68 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import Blotter from './components/Blotter';
 import Dashboard from './components/Dashboard';
 import AlertPanel from './components/AlertPanel';
+import { deriveAnalyticsFromTrades } from './utils/deriveAnalytics';
 
 function App() {
   const { trades, strategies, alerts, analytics, connected, dismissAlert, clearAlerts } = useWebSocket();
   const [activeTab, setActiveTab] = useState<'blotter' | 'dashboard'>('blotter');
   const [showAlerts, setShowAlerts] = useState(true);
+  const [universe, setUniverse] = useState<'all' | 'eur'>(() => {
+    const saved = localStorage.getItem('instrument-universe');
+    return saved === 'eur' ? 'eur' : 'all';
+  });
+
+  const eurUnderlyingRegex = useMemo(() => /EURIBOR|\bESTR\b|€STR/i, []);
+
+  const { filteredTrades, filteredStrategies, filteredAlerts, filteredAnalytics } = useMemo(() => {
+    if (universe === 'all') {
+      return {
+        filteredTrades: trades,
+        filteredStrategies: strategies,
+        filteredAlerts: alerts,
+        filteredAnalytics: analytics,
+      };
+    }
+
+    const isEurTrade = (t: (typeof trades)[number]) => {
+      const hay = `${t.unique_product_identifier_underlier_name ?? ''} ${t.unique_product_identifier ?? ''}`;
+      return eurUnderlyingRegex.test(hay);
+    };
+
+    const ft = trades.filter(isEurTrade);
+    const tradeIdSet = new Set(ft.map(t => t.dissemination_identifier));
+
+    const fs = strategies.filter(s => {
+      if (eurUnderlyingRegex.test(s.underlying_name ?? '')) return true;
+      return (s.legs ?? []).some(id => tradeIdSet.has(id));
+    });
+
+    const strategyIdSet = new Set(fs.map(s => s.strategy_id));
+
+    const fa = alerts.filter(a => {
+      // Keep alert if it has no linkage, or links to filtered trade/strategy
+      if (!a.trade_id && !a.strategy_id) return true;
+      if (a.trade_id && tradeIdSet.has(a.trade_id)) return true;
+      if (a.strategy_id && strategyIdSet.has(a.strategy_id)) return true;
+      return false;
+    });
+
+    const derived = deriveAnalyticsFromTrades({
+      trades: ft,
+      strategies: fs,
+      alerts: fa,
+      keepProTraderFrom: analytics,
+    });
+
+    return {
+      filteredTrades: ft,
+      filteredStrategies: fs,
+      filteredAlerts: fa,
+      filteredAnalytics: derived,
+    };
+  }, [alerts, analytics, eurUnderlyingRegex, strategies, trades, universe]);
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -27,6 +82,34 @@ function App() {
             </div>
             
             <div className="flex items-center space-x-3">
+              {/* Instrument universe filter */}
+              <div className="flex items-center bg-gray-100 rounded-lg p-1">
+                <button
+                  onClick={() => {
+                    setUniverse('all');
+                    localStorage.setItem('instrument-universe', 'all');
+                  }}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    universe === 'all' ? 'bg-white shadow text-gray-900' : 'text-gray-700 hover:text-gray-900'
+                  }`}
+                  title="Show all instruments"
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => {
+                    setUniverse('eur');
+                    localStorage.setItem('instrument-universe', 'eur');
+                  }}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    universe === 'eur' ? 'bg-white shadow text-gray-900' : 'text-gray-700 hover:text-gray-900'
+                  }`}
+                  title="Filter to EUR (EURIBOR / ESTR)"
+                >
+                  EUR
+                </button>
+              </div>
+
               {/* Alert Toggle */}
               <button
                 onClick={() => setShowAlerts(!showAlerts)}
@@ -74,9 +157,9 @@ function App() {
         {/* Content */}
         <main className="flex-1 overflow-hidden">
           {activeTab === 'blotter' ? (
-            <Blotter trades={trades} strategies={strategies} />
+            <Blotter trades={filteredTrades} strategies={filteredStrategies} />
           ) : (
-            <Dashboard analytics={analytics} trades={trades} strategies={strategies} />
+            <Dashboard analytics={filteredAnalytics} trades={filteredTrades} strategies={filteredStrategies} />
           )}
         </main>
       </div>
@@ -84,7 +167,7 @@ function App() {
       {/* Alert Panel */}
       {showAlerts && (
         <AlertPanel
-          alerts={alerts}
+          alerts={filteredAlerts}
           onDismiss={dismissAlert}
           onClear={clearAlerts}
         />
