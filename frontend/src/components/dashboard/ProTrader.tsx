@@ -29,6 +29,13 @@ function formatBps(value: number | null | undefined, digits = 1): string {
   return `${value.toFixed(digits)} bps`;
 }
 
+function flowLabel(v: 'BUY_PRESSURE' | 'SELL_PRESSURE' | 'BALANCED' | null | undefined): string {
+  if (!v) return '—';
+  if (v === 'BUY_PRESSURE') return 'RECEIVE';
+  if (v === 'SELL_PRESSURE') return 'PAY';
+  return 'BALANCED';
+}
+
 function sumInstrumentMetric(metrics: Record<string, InstrumentDetail> | undefined, pick: (d: InstrumentDetail) => number): number {
   if (!metrics) return 0;
   return Object.values(metrics).reduce((acc, d) => acc + (Number.isFinite(pick(d)) ? pick(d) : 0), 0);
@@ -69,12 +76,12 @@ export default function ProTrader({ proTraderMetrics }: ProTraderProps) {
       totalVolume,
       totalTrades,
       avgTradeSize,
-      newTrades: current?.flow_metrics.new_trades_count ?? 0,
-      largeBlocks: current?.flow_metrics.large_block_count ?? 0,
-      buyRatio: current?.flow_metrics.buy_volume_ratio ?? 0,
-      netFlow: current?.flow_metrics.net_flow_direction ?? 'BALANCED',
-      intensity: current?.flow_metrics.flow_intensity ?? 0,
-      dominant: current?.flow_metrics.dominant_instrument ?? '—',
+      newTrades: current?.flow_metrics?.new_trades_count ?? 0,
+      largeBlocks: current?.flow_metrics?.large_block_count ?? 0,
+      buyRatio: current?.flow_metrics?.buy_volume_ratio ?? 0,
+      netFlow: current?.flow_metrics?.net_flow_direction ?? 'BALANCED',
+      intensity: current?.flow_metrics?.flow_intensity ?? 0,
+      dominant: current?.flow_metrics?.dominant_instrument ?? '—',
       alertsCount: current?.alerts?.length ?? 0,
     };
   }, [current]);
@@ -95,7 +102,7 @@ export default function ProTrader({ proTraderMetrics }: ProTraderProps) {
       const t30 = d30?.trade_count ?? 0;
       const avg15 = t15 > 0 ? v15 / t15 : 0;
 
-      const direction15 = m15?.flow_metrics.flow_by_instrument?.[instrument] ?? null;
+      const direction15 = m15?.flow_metrics?.flow_by_instrument?.[instrument] ?? null;
 
       return {
         instrument,
@@ -203,7 +210,7 @@ export default function ProTrader({ proTraderMetrics }: ProTraderProps) {
                 <span className="font-mono text-orange-700">{totals.largeBlocks}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Buy ratio</span>
+                <span className="text-gray-600">Receive ratio</span>
                 <span className="font-mono text-gray-900">{Math.round(totals.buyRatio * 100)}%</span>
               </div>
             </div>
@@ -263,7 +270,7 @@ export default function ProTrader({ proTraderMetrics }: ProTraderProps) {
                         </div>
                       </td>
                       <td className="px-6 py-3 whitespace-nowrap text-sm">
-                        <span className={`px-2 py-1 rounded text-xs font-semibold ${flowColor}`}>{r.direction15 ?? '—'}</span>
+                        <span className={`px-2 py-1 rounded text-xs font-semibold ${flowColor}`}>{flowLabel(r.direction15)}</span>
                       </td>
                       <td className="px-6 py-3 whitespace-nowrap text-sm text-right font-mono text-gray-900">
                         {formatNotional(r.v15)}€
@@ -351,11 +358,11 @@ export default function ProTrader({ proTraderMetrics }: ProTraderProps) {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
                   {[
-                    { name: '2s5s', d: current.spread_metrics.spread_2y_5y },
-                    { name: '5s10s', d: current.spread_metrics.spread_5y_10y },
-                    { name: '10s30s', d: current.spread_metrics.spread_10y_30y },
-                    { name: '2s10s', d: current.spread_metrics.spread_2y_10y },
-                    { name: '2s30s', d: current.spread_metrics.spread_2y_30y },
+                    { name: '2s5s', d: current.spread_metrics?.spread_2y_5y ?? { current: 0, high: 0, low: 0, change_bps: 0, z_score: null } },
+                    { name: '5s10s', d: current.spread_metrics?.spread_5y_10y ?? { current: 0, high: 0, low: 0, change_bps: 0, z_score: null } },
+                    { name: '10s30s', d: current.spread_metrics?.spread_10y_30y ?? { current: 0, high: 0, low: 0, change_bps: 0, z_score: null } },
+                    { name: '2s10s', d: current.spread_metrics?.spread_2y_10y ?? { current: 0, high: 0, low: 0, change_bps: 0, z_score: null } },
+                    { name: '2s30s', d: current.spread_metrics?.spread_2y_30y ?? { current: 0, high: 0, low: 0, change_bps: 0, z_score: null } },
                   ].map(({ name, d }) => (
                     <tr key={name} className="hover:bg-gray-50/60">
                       <td className="px-6 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">{name}</td>

@@ -4,6 +4,7 @@ import Blotter from './components/Blotter';
 import Dashboard from './components/Dashboard';
 import AlertPanel from './components/AlertPanel';
 import { deriveAnalyticsFromTrades } from './utils/deriveAnalytics';
+import { computeProTraderMetricsFromTrades } from './utils/proTraderFromTrades';
 
 function App() {
   const { trades, strategies, alerts, analytics, connected, dismissAlert, clearAlerts } = useWebSocket();
@@ -22,7 +23,9 @@ function App() {
         filteredTrades: trades,
         filteredStrategies: strategies,
         filteredAlerts: alerts,
-        filteredAnalytics: analytics,
+        filteredAnalytics: analytics
+          ? { ...analytics, pro_trader_metrics: computeProTraderMetricsFromTrades(trades) }
+          : analytics,
       };
     }
 
@@ -54,6 +57,7 @@ function App() {
       strategies: fs,
       alerts: fa,
       keepProTraderFrom: analytics,
+      proTraderMetricsOverride: computeProTraderMetricsFromTrades(ft),
     });
 
     return {

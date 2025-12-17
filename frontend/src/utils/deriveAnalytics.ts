@@ -376,8 +376,9 @@ export function deriveAnalyticsFromTrades(params: {
   strategies: Strategy[];
   alerts?: Alert[];
   keepProTraderFrom?: Analytics | null;
+  proTraderMetricsOverride?: Analytics['pro_trader_metrics'];
 }): Analytics {
-  const { trades, strategies, alerts, keepProTraderFrom } = params;
+  const { trades, strategies, alerts, keepProTraderFrom, proTraderMetricsOverride } = params;
 
   const total_trades = trades.length;
   const total_notional_eur = trades.reduce((a, t) => a + safeNumber(t.notional_eur), 0);
@@ -433,7 +434,7 @@ export function deriveAnalyticsFromTrades(params: {
     currency_metrics,
     strategy_metrics,
     // Preserve pro-trader metrics from backend (already specialized and expensive)
-    pro_trader_metrics: keepProTraderFrom?.pro_trader_metrics,
+    pro_trader_metrics: proTraderMetricsOverride ?? keepProTraderFrom?.pro_trader_metrics,
     pro_trader_deltas: keepProTraderFrom?.pro_trader_deltas,
   };
 }
