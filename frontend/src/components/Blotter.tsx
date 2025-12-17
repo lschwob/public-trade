@@ -43,7 +43,8 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'action', label: 'Action', visible: true, width: 90 },
   { id: 'underlying', label: 'Underlying', visible: true, width: 200 },
   { id: 'notional', label: 'Notional', visible: true, width: 140 },
-  { id: 'tenor', label: 'Instrument', visible: true, width: 100 },  // Renamed from "Tenor" to "Instrument"
+  { id: 'tenor', label: 'Tenor', visible: true, width: 90 },
+  { id: 'instrument', label: 'Instrument', visible: true, width: 100 },
   { id: 'rate', label: 'Rate', visible: true, width: 120 },
   { id: 'package', label: 'Package', visible: true, width: 100 },
   { id: 'strategy', label: 'Strategy', visible: true, width: 220 },
@@ -70,10 +71,67 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
   const [expandedStrategies, setExpandedStrategies] = useState<Set<string>>(new Set());
   const [columns, setColumns] = useState<ColumnConfig[]>(() => {
     const saved = localStorage.getItem('blotter-columns');
-    return saved ? JSON.parse(saved) : DEFAULT_COLUMNS;
+    if (!saved) return DEFAULT_COLUMNS;
+    try {
+      const parsed = JSON.parse(saved) as ColumnConfig[];
+
+      // Migration:
+      // - older versions used id 'tenor' to display maturity instrument
+      // - new versions split into {tenor} (index tenor) and {instrument} (maturity)
+      const migrated = parsed.map((c) => {
+        if (c.id === 'tenor' && (c.label === 'Instrument' || c.label === 'Tenor')) {
+          // If there's already an 'instrument' column in saved state, keep as-is.
+          // Otherwise repurpose old 'tenor' into 'instrument'.
+          const hasInstrument = parsed.some(x => x.id === 'instrument');
+          if (!hasInstrument) {
+            return { ...c, id: 'instrument', label: 'Instrument' };
+          }
+        }
+        return c;
+      });
+
+      const byId = new Map(migrated.map(c => [c.id, c]));
+      const ensure = (id: string) => {
+        if (!byId.has(id)) {
+          const def = DEFAULT_COLUMNS.find(c => c.id === id);
+          if (def) byId.set(id, def);
+        }
+      };
+
+      ensure('tenor');
+      ensure('instrument');
+
+      // Keep saved order, then append any new defaults not present
+      const ordered: ColumnConfig[] = [];
+      const seen = new Set<string>();
+      for (const c of migrated) {
+        if (!seen.has(c.id)) {
+          ordered.push(c);
+          seen.add(c.id);
+        }
+      }
+      for (const def of DEFAULT_COLUMNS) {
+        if (!seen.has(def.id)) ordered.push(def);
+      }
+
+      // If tenor was newly inserted, place it right after underlying for UX
+      const hasTenor = ordered.some(c => c.id === 'tenor');
+      if (hasTenor) {
+        const idxUnderlying = ordered.findIndex(c => c.id === 'underlying');
+        const idxTenor = ordered.findIndex(c => c.id === 'tenor');
+        if (idxUnderlying >= 0 && idxTenor >= 0 && idxTenor !== idxUnderlying + 1) {
+          const [tenorCol] = ordered.splice(idxTenor, 1);
+          ordered.splice(idxUnderlying + 1, 0, tenorCol);
+        }
+      }
+
+      return ordered;
+    } catch {
+      return DEFAULT_COLUMNS;
+    }
   });
   const [showColumnSelector, setShowColumnSelector] = useState(false);
-  const prevTradesLengthRef = useRef(0);
+  const prevTradeIdsRef = useRef<Set<string>>(new Set());
   const [draggedColumn, setDraggedColumn] = useState<number | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<number | null>(null);
 
@@ -180,17 +238,20 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
 
   // Highlight new trades
   useEffect(() => {
-    if (trades.length > prevTradesLengthRef.current) {
-      const newTrades = trades.slice(0, trades.length - prevTradesLengthRef.current);
-      const newIds = new Set(newTrades.map(t => t.dissemination_identifier));
-      setHighlightedIds(newIds);
-      
-      // Remove highlight after 3 seconds
-      setTimeout(() => {
-        setHighlightedIds(new Set());
-      }, 3000);
+    const prev = prevTradeIdsRef.current;
+    const next = new Set(trades.map(t => t.dissemination_identifier));
+    const newlyAdded: string[] = [];
+
+    for (const id of next) {
+      if (!prev.has(id)) newlyAdded.push(id);
     }
-    prevTradesLengthRef.current = trades.length;
+
+    if (newlyAdded.length > 0) {
+      setHighlightedIds(new Set(newlyAdded));
+      setTimeout(() => setHighlightedIds(new Set()), 3000);
+    }
+
+    prevTradeIdsRef.current = next;
   }, [trades]);
 
   const toggleExpand = useCallback((tradeId: string) => {
@@ -239,100 +300,43 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
     setDragOverColumn(null);
   }, [draggedColumn, dragOverColumn, columns]);
 
-  // Group trades by strategy
-  const tradesByStrategy = useMemo(() => {
-    const strategyMap = new Map<string, { strategy: Strategy; trades: Trade[] }>();
-    const tradesWithoutStrategy: Trade[] = [];
-    
-    for (const trade of filteredTrades) {
-      if (trade.strategy_id) {
-        const strategy = strategies.find(s => s.strategy_id === trade.strategy_id);
-        if (strategy) {
-          if (!strategyMap.has(trade.strategy_id)) {
-            strategyMap.set(trade.strategy_id, { strategy, trades: [] });
-          }
-          strategyMap.get(trade.strategy_id)!.trades.push(trade);
-        } else {
-          tradesWithoutStrategy.push(trade);
-        }
-      } else {
-        tradesWithoutStrategy.push(trade);
-      }
-    }
-    
-    return { strategyMap, tradesWithoutStrategy };
-  }, [filteredTrades, strategies]);
+  const strategiesById = useMemo(() => {
+    return new Map(strategies.map(s => [s.strategy_id, s]));
+  }, [strategies]);
 
-  // Sort and display trades (most recent first)
-  // Group strategies together and allow expansion to see legs
+  // Display trades in current order (already newest-first from cache),
+  // but group strategy legs efficiently (no O(n^2) filters).
   const displayTrades = useMemo(() => {
-    const sorted = [...filteredTrades].sort((a, b) => {
-      const timeA = new Date(a.execution_timestamp).getTime();
-      const timeB = new Date(b.execution_timestamp).getTime();
-      return timeB - timeA; // Descending (newest first)
-    });
-    
-    // Track which trades are already shown as part of a group or strategy
-    const shownTradeIds = new Set<string>();
-    const result: (Trade | { type: 'strategy'; strategy: Strategy; trades: Trade[] })[] = [];
-    const processedStrategies = new Set<string>();
-    
-    // Process trades and group by strategy
-    for (const trade of sorted) {
-      // Skip if already shown
-      if (shownTradeIds.has(trade.dissemination_identifier)) {
-        continue;
+    const strategyTrades = new Map<string, Trade[]>();
+    for (const t of filteredTrades) {
+      if (t.strategy_id && strategiesById.has(t.strategy_id)) {
+        if (!strategyTrades.has(t.strategy_id)) strategyTrades.set(t.strategy_id, []);
+        strategyTrades.get(t.strategy_id)!.push(t);
       }
-      
-      // If trade has a strategy_id, group it with other trades in the same strategy
-      if (trade.strategy_id && !processedStrategies.has(trade.strategy_id)) {
-        const strategy = strategies.find(s => s.strategy_id === trade.strategy_id);
-        if (strategy) {
-          // Find all trades in this strategy
-          const strategyTrades = sorted.filter(t => 
-            t.strategy_id === trade.strategy_id && 
-            !shownTradeIds.has(t.dissemination_identifier)
-          );
-          
-          // Sort strategy trades by timestamp
-          strategyTrades.sort((a, b) => {
-            const timeA = new Date(a.execution_timestamp).getTime();
-            const timeB = new Date(b.execution_timestamp).getTime();
-            return timeB - timeA;
-          });
-          
-          // Add strategy as a group
-          result.push({ type: 'strategy', strategy, trades: strategyTrades });
-          
-          // Mark all strategy trades as shown
-          strategyTrades.forEach(t => shownTradeIds.add(t.dissemination_identifier));
-          processedStrategies.add(trade.strategy_id);
-          continue;
-        }
-      }
-      
-      // Show the trade individually
-      result.push(trade);
-      shownTradeIds.add(trade.dissemination_identifier)
     }
-    
-    // Re-sort result by timestamp (strategies use their first trade's timestamp)
-    return result.sort((a, b) => {
-      const timeA = 'type' in a && a.type === 'strategy' 
-        ? new Date(a.trades[0]?.execution_timestamp || 0).getTime()
-        : new Date((a as Trade).execution_timestamp).getTime();
-      const timeB = 'type' in b && b.type === 'strategy'
-        ? new Date(b.trades[0]?.execution_timestamp || 0).getTime()
-        : new Date((b as Trade).execution_timestamp).getTime();
-      return timeB - timeA;
-    });
-  }, [filteredTrades, strategies]);
+
+    const emittedStrategies = new Set<string>();
+    const result: (Trade | { type: 'strategy'; strategy: Strategy; trades: Trade[] })[] = [];
+
+    for (const t of filteredTrades) {
+      const sid = t.strategy_id;
+      if (sid && strategiesById.has(sid)) {
+        if (emittedStrategies.has(sid)) continue;
+        emittedStrategies.add(sid);
+        result.push({ type: 'strategy', strategy: strategiesById.get(sid)!, trades: strategyTrades.get(sid)! });
+      } else {
+        result.push(t);
+      }
+    }
+
+    return result;
+  }, [filteredTrades, strategiesById]);
 
 
   return (
     <div className="flex flex-col h-full bg-white">
       {/* Toolbar */}
-      <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
+      <div className="px-6 py-3 border-b border-gray-200 bg-white">
         <div className="flex items-center justify-between gap-4 mb-2">
           <div className="flex-1">
             <input
@@ -340,20 +344,20 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
               placeholder="Search by underlying, strategy ID, or trade ID..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-50/60"
             />
           </div>
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700"
+            className="px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700"
           >
             {showFilters ? '▲' : '▼'} Filters
           </button>
           <button
             onClick={() => setShowColumnSelector(!showColumnSelector)}
-            className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700"
+            className="px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700"
           >
-            ⚙️ Columns
+            Columns
           </button>
         </div>
         
@@ -483,12 +487,11 @@ export default function Blotter({ trades, strategies = [] }: BlotterProps) {
                 ))}
               </colgroup>
               <tbody>
-                {displayTrades.map((item, index) => {
+                {displayTrades.map((item) => {
                   // Check if this is a strategy group
                   if ('type' in item && item.type === 'strategy') {
                     const { strategy, trades } = item;
                     const isExpanded = expandedStrategies.has(strategy.strategy_id);
-                    const firstTrade = trades[0];
                     const isHighlighted = trades.some(t => highlightedIds.has(t.dissemination_identifier));
                     
                     return (

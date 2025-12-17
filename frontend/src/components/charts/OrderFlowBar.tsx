@@ -9,27 +9,37 @@ export default function OrderFlowBar({
   intensity,
   buyVolumeRatio 
 }: OrderFlowBarProps) {
-  const buyPercentage = buyVolumeRatio * 100;
-  const sellPercentage = (1 - buyVolumeRatio) * 100;
+  // IRS convention:
+  // - BUY_PRESSURE (rates falling) ~= RECEIVE-fixed pressure
+  // - SELL_PRESSURE (rates rising) ~= PAY-fixed pressure
+  const receivePercentage = buyVolumeRatio * 100;
+  const payPercentage = (1 - buyVolumeRatio) * 100;
+
+  const directionLabel =
+    direction === 'BUY_PRESSURE'
+      ? 'RECEIVE PRESSURE'
+      : direction === 'SELL_PRESSURE'
+      ? 'PAY PRESSURE'
+      : 'BALANCED';
 
   return (
     <div className="w-full">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium text-gray-700">Order Flow</span>
+        <span className="text-sm font-medium text-gray-700">Pay/Receive Flow</span>
         <span className="text-xs text-gray-500">Intensity: {intensity.toFixed(0)}</span>
       </div>
       
       <div className="relative h-8 bg-gray-200 rounded-full overflow-hidden">
-        {/* Buy pressure (left, green) */}
+        {/* Receive pressure (left, green) */}
         <div
           className="absolute left-0 top-0 h-full bg-green-500 transition-all duration-300"
-          style={{ width: `${buyPercentage}%` }}
+          style={{ width: `${receivePercentage}%` }}
         />
         
-        {/* Sell pressure (right, red) */}
+        {/* Pay pressure (right, red) */}
         <div
           className="absolute right-0 top-0 h-full bg-red-500 transition-all duration-300"
-          style={{ width: `${sellPercentage}%` }}
+          style={{ width: `${payPercentage}%` }}
         />
         
         {/* Center indicator */}
@@ -38,17 +48,17 @@ export default function OrderFlowBar({
       
       <div className="flex justify-between mt-1 text-xs">
         <span className="text-green-600 font-medium">
-          {buyPercentage.toFixed(0)}% Buy
+          {receivePercentage.toFixed(0)}% Receive
         </span>
         <span className={`font-bold ${
           direction === 'BUY_PRESSURE' ? 'text-green-600' :
           direction === 'SELL_PRESSURE' ? 'text-red-600' :
           'text-gray-600'
         }`}>
-          {direction.replace('_', ' ')}
+          {directionLabel}
         </span>
         <span className="text-red-600 font-medium">
-          {sellPercentage.toFixed(0)}% Sell
+          {payPercentage.toFixed(0)}% Pay
         </span>
       </div>
     </div>

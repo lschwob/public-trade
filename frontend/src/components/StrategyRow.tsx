@@ -9,6 +9,7 @@ import { memo } from 'react';
 import { Trade, Strategy } from '../types/trade';
 import { ColumnConfig } from './Blotter';
 import TradeRow from './TradeRow';
+import { extractUnderlierTenor, getTenorFromTrade } from '../utils/underlierTenor';
 
 /**
  * Props for the StrategyRow component.
@@ -67,7 +68,6 @@ function StrategyRowComponent({
 
   const strategyLabel = formatStrategyLabel(strategy);
   const firstTrade = trades[0];
-  const lastTrade = trades[trades.length - 1];
 
   const renderCell = (columnId: string) => {
     switch (columnId) {
@@ -113,12 +113,16 @@ function StrategyRowComponent({
         );
       
       case 'tenor':
-        // Extract instrument from strategy type if present (e.g., "10Y/30Y Spread" -> "10Y/30Y")
-        const tenorMatch = strategy.strategy_type.match(/^([\dYM\/]+)\s/);
-        const tenor = tenorMatch ? tenorMatch[1] : '-';
         return (
           <div className="text-gray-600 text-xs">
-            {tenor}
+            {extractUnderlierTenor(strategy.underlying_name) ?? getTenorFromTrade(firstTrade)}
+          </div>
+        );
+
+      case 'instrument':
+        return (
+          <div className="text-gray-600 text-xs">
+            {firstTrade.instrument || '-'}
           </div>
         );
       
@@ -219,14 +223,14 @@ function StrategyRowComponent({
   return (
     <>
       <tr
-        className={`border-b border-gray-200 hover:bg-gray-50 transition-all ${
-          highlighted ? 'bg-blue-50 ring-2 ring-blue-300' : 'bg-purple-50'
+        className={`border-b border-gray-100 hover:bg-gray-50/70 transition-colors ${
+          highlighted ? 'bg-blue-50 ring-2 ring-blue-200' : 'bg-purple-50/60'
         }`}
       >
         {visibleColumns.map(col => (
           <td
             key={col.id}
-            className="px-3 py-3 border-r border-gray-200 text-sm align-middle overflow-hidden"
+            className="px-3 py-2 border-r border-gray-100 text-sm align-middle overflow-hidden"
             style={{ width: `${col.width}px`, maxWidth: `${col.width}px` }}
           >
             <div className="truncate" style={{ maxWidth: `${col.width - 24}px` }}>

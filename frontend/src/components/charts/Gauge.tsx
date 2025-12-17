@@ -1,5 +1,3 @@
-import React from 'react';
-
 interface GaugeProps {
   value: number;
   min?: number;

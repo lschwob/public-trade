@@ -1,4 +1,3 @@
-import React from 'react';
 import { Treemap as RechartsTreemap, ResponsiveContainer, Tooltip, Cell } from 'recharts';
 
 interface TreemapData {
@@ -48,7 +47,7 @@ export default function Treemap({
         fill="#8884d8"
         content={<CustomContent nameKey={nameKey} valueFormatter={valueFormatter} />}
       >
-        {data.map((entry, index) => (
+        {data.map((_, index) => (
           <Cell
             key={`cell-${index}`}
             fill={colors[index % colors.length]}

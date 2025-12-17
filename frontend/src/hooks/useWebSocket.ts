@@ -38,6 +38,201 @@ export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number>();
 
+  // ---------------------------------------------------------------------------
+  // Trade/strategy caches: keep UI stable across reconnects and avoid full reload.
+  // ---------------------------------------------------------------------------
+  const MAX_TRADES = 1000;
+  const tradeCacheRef = useRef<Map<string, Trade>>(new Map());
+  const tradeFpRef = useRef<Map<string, string>>(new Map());
+  const tradeTimeRef = useRef<Map<string, number>>(new Map());
+  const tradeOrderRef = useRef<string[]>([]);
+
+  const strategyCacheRef = useRef<Map<string, Strategy>>(new Map());
+  const strategyFpRef = useRef<Map<string, string>>(new Map());
+
+  const toTimeMs = (timestamp: string): number => {
+    const ms = new Date(timestamp).getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  };
+
+  const fingerprintTrade = (t: Trade): string => {
+    // Keep this small but representative of UI + expansion content.
+    const legsIds =
+      t.package_legs && t.package_legs.length > 0
+        ? t.package_legs.map(l => l.dissemination_identifier).join(',')
+        : '';
+    return JSON.stringify([
+      t.dissemination_identifier,
+      t.action_type,
+      t.execution_timestamp,
+      t.unique_product_identifier_underlier_name ?? null,
+      t.instrument ?? null,
+      t.platform_identifier ?? null,
+      t.is_forward,
+      t.package_indicator,
+      t.package_legs_count ?? null,
+      legsIds,
+      t.notional_amount_leg1,
+      t.notional_amount_leg2,
+      t.notional_currency_leg1,
+      t.notional_currency_leg2,
+      t.notional_eur ?? null,
+      t.fixed_rate_leg1 ?? null,
+      t.spread_leg2 ?? null,
+      t.strategy_id ?? null,
+      t.expiration_date ?? null,
+    ]);
+  };
+
+  const fingerprintStrategy = (s: Strategy): string => {
+    return JSON.stringify([
+      s.strategy_id,
+      s.strategy_type,
+      s.underlying_name ?? null,
+      s.total_notional_eur,
+      s.execution_start,
+      s.execution_end,
+      s.package_transaction_price ?? null,
+      s.legs?.join(',') ?? '',
+    ]);
+  };
+
+  const insertSortedByTimeDesc = (order: string[], id: string, timeMs: number) => {
+    // Remove if already present
+    const existingIdx = order.indexOf(id);
+    if (existingIdx >= 0) order.splice(existingIdx, 1);
+
+    // Binary search insert position (desc)
+    let lo = 0;
+    let hi = order.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      const midTime = tradeTimeRef.current.get(order[mid]) ?? 0;
+      if (midTime >= timeMs) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    order.splice(lo, 0, id);
+  };
+
+  const pruneTrades = () => {
+    const order = tradeOrderRef.current;
+    if (order.length <= MAX_TRADES) return;
+    const removed = order.splice(MAX_TRADES);
+    for (const id of removed) {
+      tradeCacheRef.current.delete(id);
+      tradeFpRef.current.delete(id);
+      tradeTimeRef.current.delete(id);
+    }
+  };
+
+  const emitTradesFromCache = () => {
+    const next: Trade[] = [];
+    for (const id of tradeOrderRef.current) {
+      const t = tradeCacheRef.current.get(id);
+      if (t) next.push(t);
+    }
+    setTrades(next);
+  };
+
+  const emitStrategiesFromCache = () => {
+    // Keep insertion order: newest first (we'll just reverse-iterate by existing array order if needed later)
+    setStrategies(Array.from(strategyCacheRef.current.values()));
+  };
+
+  // Batch UI updates so a burst of WS messages doesn't re-render row-by-row.
+  const flushHandleRef = useRef<number | null>(null);
+  const pendingTradesRef = useRef(false);
+  const pendingStrategiesRef = useRef(false);
+
+  const scheduleFlush = () => {
+    if (flushHandleRef.current !== null) return;
+    const flush = () => {
+      flushHandleRef.current = null;
+      const shouldEmitTrades = pendingTradesRef.current;
+      const shouldEmitStrategies = pendingStrategiesRef.current;
+      pendingTradesRef.current = false;
+      pendingStrategiesRef.current = false;
+
+      if (shouldEmitTrades) emitTradesFromCache();
+      if (shouldEmitStrategies) emitStrategiesFromCache();
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      flushHandleRef.current = window.requestAnimationFrame(flush);
+    } else {
+      flushHandleRef.current = window.setTimeout(flush, 16) as unknown as number;
+    }
+  };
+
+  const upsertTrade = (trade: Trade, { allowReorder }: { allowReorder: boolean }): boolean => {
+    const id = trade.dissemination_identifier;
+    const fp = fingerprintTrade(trade);
+    const prevFp = tradeFpRef.current.get(id);
+    const timeMs = toTimeMs(trade.execution_timestamp);
+    const prevTime = tradeTimeRef.current.get(id);
+
+    const isNew = !tradeCacheRef.current.has(id);
+    const hasChanged = isNew || prevFp !== fp;
+    const timeChanged = prevTime !== timeMs;
+
+    if (!hasChanged && (!allowReorder || !timeChanged)) {
+      return false;
+    }
+
+    if (hasChanged) {
+      tradeCacheRef.current.set(id, trade);
+      tradeFpRef.current.set(id, fp);
+    }
+    tradeTimeRef.current.set(id, timeMs);
+
+    if (isNew) {
+      // Most new trades are newest; but keep order correct anyway.
+      insertSortedByTimeDesc(tradeOrderRef.current, id, timeMs);
+    } else if (allowReorder && timeChanged) {
+      insertSortedByTimeDesc(tradeOrderRef.current, id, timeMs);
+    }
+
+    return true;
+  };
+
+  const upsertTrades = (incoming: Trade[], { allowReorder }: { allowReorder: boolean }): boolean => {
+    let changed = false;
+    for (const t of incoming) {
+      if (!t?.dissemination_identifier) continue;
+      if (upsertTrade(t, { allowReorder })) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      pruneTrades();
+    }
+    return changed;
+  };
+
+  const upsertStrategy = (strategy: Strategy): boolean => {
+    const id = strategy.strategy_id;
+    const fp = fingerprintStrategy(strategy);
+    const prevFp = strategyFpRef.current.get(id);
+    const isNew = !strategyCacheRef.current.has(id);
+    const hasChanged = isNew || prevFp !== fp;
+    if (!hasChanged) return false;
+    strategyCacheRef.current.set(id, strategy);
+    strategyFpRef.current.set(id, fp);
+    return true;
+  };
+
+  const upsertStrategies = (incoming: Strategy[]): boolean => {
+    let changed = false;
+    for (const s of incoming) {
+      if (!s?.strategy_id) continue;
+      if (upsertStrategy(s)) changed = true;
+    }
+    return changed;
+  };
+
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
@@ -85,11 +280,19 @@ export function useWebSocket() {
           
           switch (message.type) {
             case 'initial_state':
-              if (message.data.trades) {
-                setTrades(message.data.trades);
-              }
-              if (message.data.strategies) {
-                setStrategies(message.data.strategies);
+              {
+                const incomingTrades = (message.data?.trades ?? []) as Trade[];
+                const incomingStrategies = (message.data?.strategies ?? []) as Strategy[];
+
+                // Merge snapshot into cache instead of replacing state:
+                // - keeps old cached trades on reconnect
+                // - avoids "full reload" render
+                const tradesChanged = upsertTrades(incomingTrades, { allowReorder: true });
+                const strategiesChanged = upsertStrategies(incomingStrategies);
+
+                if (tradesChanged) pendingTradesRef.current = true;
+                if (strategiesChanged) pendingStrategiesRef.current = true;
+                if (tradesChanged || strategiesChanged) scheduleFlush();
               }
               if (message.data.analytics) {
                 setAnalytics(message.data.analytics);
@@ -97,50 +300,36 @@ export function useWebSocket() {
               break;
             
             case 'new_trade':
-              setTrades((prev) => {
+              {
                 const newTrade = message.data as Trade;
-                // Check if trade already exists (update it)
-                const existingIndex = prev.findIndex(
-                  t => t.dissemination_identifier === newTrade.dissemination_identifier
-                );
-                if (existingIndex >= 0) {
-                  const updated = [...prev];
-                  updated[existingIndex] = newTrade;
-                  return updated;
+                if (upsertTrade(newTrade, { allowReorder: true })) {
+                  pruneTrades();
+                  pendingTradesRef.current = true;
+                  scheduleFlush();
                 }
-                // Add new trade at the beginning
-                const newTrades = [newTrade, ...prev];
-                // Keep last 1000 trades
-                return newTrades.slice(0, 1000);
-              });
+              }
               break;
             
             case 'trade_updated':
-              setTrades((prev) => {
+              {
                 const updatedTrade = message.data as Trade;
-                const index = prev.findIndex(
-                  t => t.dissemination_identifier === updatedTrade.dissemination_identifier
-                );
-                if (index >= 0) {
-                  const updated = [...prev];
-                  updated[index] = updatedTrade;
-                  return updated;
+                // Updates should not reorder unless timestamp changed.
+                if (upsertTrade(updatedTrade, { allowReorder: true })) {
+                  pruneTrades();
+                  pendingTradesRef.current = true;
+                  scheduleFlush();
                 }
-                return prev;
-              });
+              }
               break;
             
             case 'strategy_detected':
-              setStrategies((prev) => {
+              {
                 const strategy = message.data as Strategy;
-                const existing = prev.findIndex(s => s.strategy_id === strategy.strategy_id);
-                if (existing >= 0) {
-                  const updated = [...prev];
-                  updated[existing] = strategy;
-                  return updated;
+                if (upsertStrategy(strategy)) {
+                  pendingStrategiesRef.current = true;
+                  scheduleFlush();
                 }
-                return [strategy, ...prev];
-              });
+              }
               break;
             
             case 'alert':

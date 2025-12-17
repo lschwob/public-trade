@@ -1,488 +1,401 @@
-import { useState, useMemo } from 'react';
-import { ProTraderMetrics, ProTraderDelta, InstrumentDetail } from '../../types/trade';
-import MiniSparkline from '../charts/MiniSparkline';
-import SpreadBadge from '../charts/SpreadBadge';
-import OrderFlowBar from '../charts/OrderFlowBar';
-import VolatilityGauge from '../charts/VolatilityGauge';
-import PercentileBadge from '../charts/PercentileBadge';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { InstrumentDetail, ProTraderMetrics } from '../../types/trade';
 import AlertBadge from '../charts/AlertBadge';
-import PriceImpactIndicator from '../charts/PriceImpactIndicator';
-import Gauge from '../charts/Gauge';
+import OrderFlowBar from '../charts/OrderFlowBar';
+import SpreadBadge from '../charts/SpreadBadge';
 
 interface ProTraderProps {
   proTraderMetrics?: Record<string, ProTraderMetrics>;
-  proTraderDeltas?: ProTraderDelta;
 }
 
 const TIME_WINDOWS = ['10min', '15min', '20min', '30min', '60min'] as const;
 type TimeWindow = typeof TIME_WINDOWS[number];
 
-export default function ProTrader({ proTraderMetrics, proTraderDeltas }: ProTraderProps) {
-  const [activeWindow, setActiveWindow] = useState<TimeWindow>('10min');
-  const [showDeltas, setShowDeltas] = useState(false);
+function formatNotional(value: number): string {
+  if (!Number.isFinite(value)) return '-';
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+  return value.toLocaleString();
+}
 
-  const currentMetrics = proTraderMetrics?.[activeWindow];
-  const referenceMetrics = showDeltas ? proTraderMetrics?.['60min'] : null;
+function formatRatePct(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+  // Backend uses % already for ProTraderInstrumentDetail fields.
+  return `${value.toFixed(3)}%`;
+}
 
-  const formatNotional = (value: number) => {
-    if (value >= 1_000_000_000) {
-      return `${(value / 1_000_000_000).toFixed(2)}B`;
-    } else if (value >= 1_000_000) {
-      return `${(value / 1_000_000).toFixed(2)}M`;
+function formatBps(value: number | null | undefined, digits = 1): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+  return `${value.toFixed(digits)} bps`;
+}
+
+function flowLabel(v: 'BUY_PRESSURE' | 'SELL_PRESSURE' | 'BALANCED' | null | undefined): string {
+  if (!v) return '—';
+  if (v === 'BUY_PRESSURE') return 'RECEIVE';
+  if (v === 'SELL_PRESSURE') return 'PAY';
+  return 'BALANCED';
+}
+
+function sumInstrumentMetric(metrics: Record<string, InstrumentDetail> | undefined, pick: (d: InstrumentDetail) => number): number {
+  if (!metrics) return 0;
+  return Object.values(metrics).reduce((acc, d) => acc + (Number.isFinite(pick(d)) ? pick(d) : 0), 0);
+}
+
+export default function ProTrader({ proTraderMetrics }: ProTraderProps) {
+  const [activeWindow, setActiveWindow] = useState<TimeWindow>('15min');
+
+  // Cache last known good metrics so the tab doesn't go blank during reloads.
+  const cacheRef = useRef<Record<string, ProTraderMetrics>>({});
+
+  useEffect(() => {
+    if (!proTraderMetrics) return;
+    for (const [k, v] of Object.entries(proTraderMetrics)) {
+      if (!v) continue;
+      const hasData =
+        (v.alerts?.length ?? 0) > 0 ||
+        (v.flow_metrics?.new_trades_count ?? 0) > 0 ||
+        Object.keys(v.instrument_metrics ?? {}).length > 0;
+      if (hasData) cacheRef.current[k] = v;
     }
-    return value.toLocaleString();
+  }, [proTraderMetrics]);
+
+  const getMetrics = (w: TimeWindow): ProTraderMetrics | undefined => {
+    return proTraderMetrics?.[w] ?? cacheRef.current[w];
   };
 
-  const formatRate = (rate: number | null) => {
-    if (rate === null) return '-';
-    return `${rate.toFixed(3)}%`;
-  };
+  const current = getMetrics(activeWindow);
+  const m15 = getMetrics('15min');
+  const m30 = getMetrics('30min');
 
-  if (!currentMetrics) {
+  const totals = useMemo(() => {
+    const totalVolume = sumInstrumentMetric(current?.instrument_metrics, d => d.volume);
+    const totalTrades = sumInstrumentMetric(current?.instrument_metrics, d => d.trade_count);
+    const avgTradeSize = totalTrades > 0 ? totalVolume / totalTrades : 0;
+
+    return {
+      totalVolume,
+      totalTrades,
+      avgTradeSize,
+      newTrades: current?.flow_metrics?.new_trades_count ?? 0,
+      largeBlocks: current?.flow_metrics?.large_block_count ?? 0,
+      buyRatio: current?.flow_metrics?.buy_volume_ratio ?? 0,
+      netFlow: current?.flow_metrics?.net_flow_direction ?? 'BALANCED',
+      intensity: current?.flow_metrics?.flow_intensity ?? 0,
+      dominant: current?.flow_metrics?.dominant_instrument ?? '—',
+      alertsCount: current?.alerts?.length ?? 0,
+    };
+  }, [current]);
+
+  const volume15v30 = useMemo(() => {
+    const keys = new Set<string>([
+      ...Object.keys(m15?.instrument_metrics ?? {}),
+      ...Object.keys(m30?.instrument_metrics ?? {}),
+    ]);
+
+    const rows = Array.from(keys).map((instrument) => {
+      const d15 = m15?.instrument_metrics?.[instrument];
+      const d30 = m30?.instrument_metrics?.[instrument];
+
+      const v15 = d15?.volume ?? 0;
+      const v30 = d30?.volume ?? 0;
+      const t15 = d15?.trade_count ?? 0;
+      const t30 = d30?.trade_count ?? 0;
+      const avg15 = t15 > 0 ? v15 / t15 : 0;
+
+      const direction15 = m15?.flow_metrics?.flow_by_instrument?.[instrument] ?? null;
+
+      return {
+        instrument,
+        v15,
+        v30,
+        t15,
+        t30,
+        avg15,
+        direction15,
+      };
+    });
+
+    const max15 = Math.max(1, ...rows.map(r => r.v15));
+    const sorted = rows
+      .filter(r => r.v15 > 0 || r.v30 > 0)
+      .sort((a, b) => b.v15 - a.v15);
+
+    return { rows: sorted, max15 };
+  }, [m15, m30]);
+
+  const topRates = useMemo(() => {
+    const focus = ['2Y', '5Y', '10Y', '30Y'];
+    const metrics = current?.instrument_metrics ?? {};
+    return focus
+      .map(i => ({ instrument: i, d: metrics[i] }))
+      .filter((x): x is { instrument: string; d: InstrumentDetail } => Boolean(x.d));
+  }, [current]);
+
+  if (!current) {
     return (
       <div className="flex items-center justify-center h-full text-gray-500">
-        No pro trader data available
-      </div>
-    );
-  }
-
-  // Focus instruments: 5Y, 10Y, 30Y
-  const focusInstruments = ['5Y', '10Y', '30Y'];
-  const instrumentDetails = focusInstruments
-    .map(instrument => ({ instrument, detail: currentMetrics.instrument_metrics[instrument] }))
-    .filter(({ detail }) => detail !== undefined);
-
-  // Check if we have any data
-  const hasData = instrumentDetails.length > 0 || 
-    Object.keys(currentMetrics.instrument_metrics).length > 0 ||
-    currentMetrics.flow_metrics.new_trades_count > 0;
-
-  if (!hasData) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
-        <div className="text-xl font-semibold mb-2">No EUR IRS trades in selected time window</div>
-        <div className="text-sm">
-          Try selecting a longer time window (30min or 1h) or check if there are trades in the blotter.
-        </div>
+        Loading pro trader data...
       </div>
     );
   }
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
-      {/* Header with time windows and controls */}
+      {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex space-x-2">
-            {TIME_WINDOWS.map((window) => {
-              const metrics = proTraderMetrics?.[window];
-              const tradeCount = metrics?.instrument_metrics ? 
-                Object.values(metrics.instrument_metrics).reduce((sum, d) => sum + (d?.trade_count || 0), 0) : 0;
-              
-              return (
-                <button
-                  key={window}
-                  onClick={() => setActiveWindow(window)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors relative ${
-                    activeWindow === window
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  {window}
-                  {tradeCount > 0 && (
-                    <span className="ml-2 text-xs opacity-75">
-                      ({tradeCount})
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+        <div className="flex items-center justify-between gap-6">
+          <div>
+            <div className="text-sm text-gray-500">EUR IRS — Trader Dashboard</div>
+            <div className="text-lg font-semibold text-gray-900">Flow • Volumes • Spreads</div>
           </div>
-          
-          <div className="flex items-center space-x-4">
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showDeltas}
-                onChange={(e) => setShowDeltas(e.target.checked)}
-                className="rounded"
-              />
-              <span className="text-sm text-gray-700">Show Δ vs 1h</span>
-            </label>
-            
-            {currentMetrics.alerts && currentMetrics.alerts.length > 0 && (
-              <div className="flex items-center space-x-2">
-                <span className="text-sm font-medium text-red-600">
-                  🔴 {currentMetrics.alerts.length} Alert{currentMetrics.alerts.length > 1 ? 's' : ''}
-                </span>
-              </div>
-            )}
+
+          <div className="flex items-center gap-2">
+            {TIME_WINDOWS.map((w) => (
+              <button
+                key={w}
+                onClick={() => setActiveWindow(w)}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  activeWindow === w
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {w}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 overflow-y-auto p-6">
-        {/* Instrument Cards and Order Flow */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          {instrumentDetails.map(({ instrument, detail }) => (
-            <InstrumentCard
-              key={instrument}
-              instrument={instrument}
-              detail={detail}
-              formatNotional={formatNotional}
-              formatRate={formatRate}
-              showDelta={showDeltas}
-              referenceDetail={referenceMetrics?.instrument_metrics[instrument]}
-            />
-          ))}
-          
-          {/* Order Flow Indicator */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Order Flow</h3>
-            <OrderFlowBar
-              direction={currentMetrics.flow_metrics.net_flow_direction}
-              intensity={currentMetrics.flow_metrics.flow_intensity}
-              buyVolumeRatio={currentMetrics.flow_metrics.buy_volume_ratio}
-            />
-            <div className="mt-4 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Dominant:</span>
-                <span className="font-medium">{currentMetrics.flow_metrics.dominant_instrument}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">New Trades:</span>
-                <span className="font-medium">{currentMetrics.flow_metrics.new_trades_count}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Large Blocks:</span>
-                <span className="font-medium text-orange-600">
-                  {currentMetrics.flow_metrics.large_block_count} &gt;500M
-                </span>
-              </div>
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* Snapshot */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-lg shadow p-5">
+            <div className="text-xs text-gray-500">Volume ({activeWindow})</div>
+            <div className="text-2xl font-bold text-gray-900">{formatNotional(totals.totalVolume)}€</div>
+            <div className="mt-2 text-sm text-gray-600 flex justify-between">
+              <span>Trades</span>
+              <span className="font-mono text-gray-900">{totals.totalTrades}</span>
             </div>
-          </div>
-        </div>
-
-        {/* Spread Monitor */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Spread Monitor (EUR IRS)</h3>
-          <SpreadMonitorTable spreadMetrics={currentMetrics.spread_metrics} />
-        </div>
-
-        {/* Metrics Panels */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          {/* Volatility */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Volatility</h3>
-            <VolatilityGauge
-              value={currentMetrics.volatility_metrics.realized_volatility}
-              percentile={currentMetrics.volatility_metrics.volatility_percentile}
-            />
-            <div className="mt-4 space-y-2 text-sm">
-              <div className="font-medium text-gray-700">Rate Velocity (bps/min):</div>
-              {Object.entries(currentMetrics.volatility_metrics.rate_velocity).map(([instrument, velocity]) => (
-                <div key={instrument} className="flex justify-between">
-                  <span className="text-gray-600">{instrument}:</span>
-                  <span className="font-mono">{velocity > 0 ? '+' : ''}{velocity.toFixed(2)}</span>
-                </div>
-              ))}
+            <div className="text-sm text-gray-600 flex justify-between">
+              <span>Avg size</span>
+              <span className="font-mono text-gray-900">{formatNotional(totals.avgTradeSize)}€</span>
             </div>
           </div>
 
-          {/* Execution Quality */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Execution Quality</h3>
-            <Gauge
-              value={currentMetrics.execution_metrics.execution_quality_score}
-              min={0}
-              max={100}
-              thresholds={{ low: 40, medium: 60, high: 80 }}
-              label="Quality Score"
-              size={120}
-            />
-            <div className="mt-4 space-y-2 text-sm">
+          <div className="bg-white rounded-lg shadow p-5">
+            <div className="text-xs text-gray-500">Net flow</div>
+            <div className="mt-2">
+              <OrderFlowBar
+                direction={totals.netFlow}
+                intensity={totals.intensity}
+                buyVolumeRatio={totals.buyRatio}
+              />
+            </div>
+            <div className="mt-3 text-sm text-gray-600 flex justify-between">
+              <span>Dominant</span>
+              <span className="font-semibold text-gray-900">{totals.dominant}</span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-5">
+            <div className="text-xs text-gray-500">Tape</div>
+            <div className="mt-2 space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-600">Slippage:</span>
-                <span className="font-mono">{currentMetrics.execution_metrics.avg_slippage.toFixed(2)} bps</span>
+                <span className="text-gray-600">New prints</span>
+                <span className="font-mono text-gray-900">{totals.newTrades}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Spread Cross:</span>
-                <span className="font-mono">{currentMetrics.execution_metrics.spread_crossing_rate.toFixed(1)}%</span>
+                <span className="text-gray-600">Blocks &gt;500M</span>
+                <span className="font-mono text-orange-700">{totals.largeBlocks}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Effective Spread:</span>
-                <span className="font-mono">{currentMetrics.execution_metrics.effective_spread.toFixed(2)} bps</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">VWAP Dev:</span>
-                <span className="font-mono">{currentMetrics.execution_metrics.vwap_deviation.toFixed(2)} bps</span>
+                <span className="text-gray-600">Receive ratio</span>
+                <span className="font-mono text-gray-900">{Math.round(totals.buyRatio * 100)}%</span>
               </div>
             </div>
           </div>
 
-          {/* Price Impact */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Price Impact</h3>
-            <PriceImpactIndicator
-              impactByBucket={currentMetrics.price_impact_metrics.impact_by_size_bucket}
-              maxImpactTrade={currentMetrics.price_impact_metrics.max_impact_trade}
-              recoveryVelocity={currentMetrics.price_impact_metrics.impact_velocity}
-            />
+          <div className="bg-white rounded-lg shadow p-5">
+            <div className="text-xs text-gray-500">Alerts</div>
+            <div className="text-2xl font-bold text-gray-900 mt-1">{totals.alertsCount}</div>
+            <div className="text-sm text-gray-600 mt-2">
+              {totals.alertsCount === 0 ? 'No active alerts' : 'See below'}
+            </div>
           </div>
         </div>
 
-        {/* Forward Curve & Historical Context */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          {/* Forward Curve */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Forward Curve Analysis</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Shape:</span>
-                <span className="font-medium">{currentMetrics.forward_curve_metrics.curve_shape}</span>
-              </div>
-              {Object.keys(currentMetrics.forward_curve_metrics.spot_vs_forward).length > 0 && (
-                <div className="mt-4">
-                  <div className="text-sm font-medium text-gray-700 mb-2">Spot vs Forward:</div>
-                  {Object.entries(currentMetrics.forward_curve_metrics.spot_vs_forward).map(([instrument, spread]) => (
-                    <div key={instrument} className="flex justify-between text-sm">
-                      <span className="text-gray-600">{instrument}:</span>
-                      <span className="font-mono">{spread > 0 ? '+' : ''}{spread.toFixed(2)} bps</span>
-                    </div>
+        {/* Volumes 15m vs 30m */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div>
+              <div className="text-sm text-gray-500">Volumes by instrument</div>
+              <div className="text-lg font-semibold text-gray-900">15 min vs 30 min</div>
+            </div>
+            <div className="text-xs text-gray-500">
+              Source: `pro_trader_metrics['15min']` & `['30min']`
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Instrument</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Flow (15m)</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Vol (15m)</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Trades</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Avg size</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Vol (30m)</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-100">
+                {volume15v30.rows.slice(0, 20).map((r) => {
+                  const barW = Math.max(2, Math.round((r.v15 / volume15v30.max15) * 140));
+                  const flowColor =
+                    r.direction15 === 'BUY_PRESSURE'
+                      ? 'text-green-700 bg-green-50'
+                      : r.direction15 === 'SELL_PRESSURE'
+                      ? 'text-red-700 bg-red-50'
+                      : 'text-gray-700 bg-gray-50';
+
+                  return (
+                    <tr key={r.instrument} className="hover:bg-gray-50/60">
+                      <td className="px-6 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">
+                        <div className="flex items-center gap-3">
+                          <span className="w-14">{r.instrument}</span>
+                          <div className="h-2 rounded bg-blue-100" style={{ width: 140 }}>
+                            <div className="h-2 rounded bg-blue-500" style={{ width: barW }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm">
+                        <span className={`px-2 py-1 rounded text-xs font-semibold ${flowColor}`}>{flowLabel(r.direction15)}</span>
+                      </td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-right font-mono text-gray-900">
+                        {formatNotional(r.v15)}€
+                      </td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-right font-mono text-gray-700">{r.t15}</td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-right font-mono text-gray-700">
+                        {formatNotional(r.avg15)}€
+                      </td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-right font-mono text-gray-700">
+                        {formatNotional(r.v30)}€
+                      </td>
+                    </tr>
+                  );
+                })}
+                {volume15v30.rows.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-8 text-center text-sm text-gray-500">
+                      No instrument activity in 15m/30m windows.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Rates & microstructure (focus tenors) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-lg shadow">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="text-sm text-gray-500">Rates snapshot</div>
+              <div className="text-lg font-semibold text-gray-900">Key tenors ({activeWindow})</div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tenor</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Mid</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">High</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Low</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Bid/ask</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Vol</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-100">
+                  {topRates.map(({ instrument, d }) => (
+                    <tr key={instrument} className="hover:bg-gray-50/60">
+                      <td className="px-6 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">{instrument}</td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-right font-mono text-gray-900">{formatRatePct(d.mid)}</td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-right font-mono text-gray-700">{formatRatePct(d.high)}</td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-right font-mono text-gray-700">{formatRatePct(d.low)}</td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-right font-mono text-gray-700">{formatBps(d.bid_ask_spread, 1)}</td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-right font-mono text-gray-700">{d.volatility !== null ? `${d.volatility.toFixed(1)}%` : '-'}</td>
+                    </tr>
                   ))}
-                </div>
-              )}
+                  {topRates.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-8 text-center text-sm text-gray-500">
+                        No key-tenor metrics available in this window.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
-          {/* Historical Context */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Historical Context</h3>
-            <div className="space-y-3">
-              {Object.entries(currentMetrics.historical_context.percentile_30d).slice(0, 5).map(([key, percentile]) => (
-                <div key={key} className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">{key}:</span>
-                  <div className="flex items-center space-x-2">
-                    <PercentileBadge percentile={percentile} />
-                    {currentMetrics.historical_context.z_score[key] !== undefined && (
-                      <span className={`text-xs font-mono ${
-                        Math.abs(currentMetrics.historical_context.z_score[key]) > 2 ? 'text-red-600' : 'text-gray-600'
-                      }`}>
-                        (z: {currentMetrics.historical_context.z_score[key].toFixed(1)})
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
+          {/* Spreads */}
+          <div className="bg-white rounded-lg shadow">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="text-sm text-gray-500">Curve</div>
+              <div className="text-lg font-semibold text-gray-900">Core spreads (EUR IRS)</div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Spread</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Current</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Change</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Z</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-100">
+                  {[
+                    { name: '2s5s', d: current.spread_metrics?.spread_2y_5y ?? { current: 0, high: 0, low: 0, change_bps: 0, z_score: null } },
+                    { name: '5s10s', d: current.spread_metrics?.spread_5y_10y ?? { current: 0, high: 0, low: 0, change_bps: 0, z_score: null } },
+                    { name: '10s30s', d: current.spread_metrics?.spread_10y_30y ?? { current: 0, high: 0, low: 0, change_bps: 0, z_score: null } },
+                    { name: '2s10s', d: current.spread_metrics?.spread_2y_10y ?? { current: 0, high: 0, low: 0, change_bps: 0, z_score: null } },
+                    { name: '2s30s', d: current.spread_metrics?.spread_2y_30y ?? { current: 0, high: 0, low: 0, change_bps: 0, z_score: null } },
+                  ].map(({ name, d }) => (
+                    <tr key={name} className="hover:bg-gray-50/60">
+                      <td className="px-6 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">{name}</td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-right font-mono text-gray-900">{d.current.toFixed(1)} bps</td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-right">
+                        <SpreadBadge value={d.change_bps} showZScore={false} zScore={d.z_score} />
+                      </td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-right font-mono text-gray-700">
+                        {d.z_score === null ? '-' : `${d.z_score > 0 ? '+' : ''}${d.z_score.toFixed(1)}σ`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
 
-        {/* Alerts Panel */}
-        {currentMetrics.alerts && currentMetrics.alerts.length > 0 && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Active Alerts</h3>
-            <div className="space-y-2">
-              {currentMetrics.alerts.map((alert) => (
-                <AlertBadge key={alert.alert_id} alert={alert} />
+        {/* Alerts */}
+        {current.alerts && current.alerts.length > 0 && (
+          <div className="bg-white rounded-lg shadow">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="text-sm text-gray-500">Alerts ({activeWindow})</div>
+              <div className="text-lg font-semibold text-gray-900">Actionable signals</div>
+            </div>
+            <div className="p-6 space-y-2">
+              {current.alerts.slice(0, 20).map((a) => (
+                <AlertBadge key={a.alert_id} alert={a} />
               ))}
             </div>
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// Instrument Card Component
-interface InstrumentCardProps {
-  instrument: string;
-  detail: InstrumentDetail;
-  formatNotional: (value: number) => string;
-  formatRate: (rate: number | null) => string;
-  showDelta?: boolean;
-  referenceDetail?: InstrumentDetail;
-}
-
-function InstrumentCard({ instrument, detail, formatNotional, formatRate, showDelta, referenceDetail }: InstrumentCardProps) {
-  const deltaMid = showDelta && referenceDetail?.mid !== undefined && detail.mid !== undefined
-    ? (detail.mid - referenceDetail.mid) * 100 // Convert to bps
-    : null;
-
-  // Generate sparkline data (simplified - would need actual rate history)
-  const sparklineData = useMemo(() => {
-    // Placeholder: generate some sample data
-    const data: number[] = [];
-    if (detail.high !== null && detail.low !== null) {
-      const range = detail.high - detail.low;
-      for (let i = 0; i < 10; i++) {
-        data.push(detail.low + (range * Math.random()));
-      }
-    }
-    return data;
-  }, [detail.high, detail.low]);
-
-  return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-xl font-bold text-gray-900">{instrument} EUR IRS</h3>
-        <div className="text-right">
-          <div className="text-sm text-gray-600">Volume</div>
-          <div className="text-lg font-semibold">{formatNotional(detail.volume)}€</div>
-        </div>
-      </div>
-
-      <div className="space-y-2 mb-4">
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-600">HIGH</span>
-          <span className="font-mono text-sm">{formatRate(detail.high)}</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-600">VWAP</span>
-          <span className="font-mono text-sm font-semibold">{formatRate(detail.vwap)}</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-600">MID</span>
-          <span className="font-mono text-sm">{formatRate(detail.mid)}</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-600">LOW</span>
-          <span className="font-mono text-sm">{formatRate(detail.low)}</span>
-        </div>
-        <div className="flex justify-between items-center pt-2 border-t">
-          <span className="text-sm text-gray-600">LAST</span>
-          <span className={`font-mono text-sm font-bold ${
-            detail.last !== null && detail.vwap !== null
-              ? detail.last > detail.vwap ? 'text-green-600' : 'text-red-600'
-              : ''
-          }`}>
-            {formatRate(detail.last)}
-          </span>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 text-xs mb-4">
-        <div>
-          <div className="text-gray-600">Spread</div>
-          <div className="font-mono">{detail.bid_ask_spread !== null ? `${detail.bid_ask_spread.toFixed(1)} bps` : '-'}</div>
-        </div>
-        <div>
-          <div className="text-gray-600">Volatility</div>
-          <div className="font-mono">{detail.volatility !== null ? `${detail.volatility.toFixed(1)}%` : '-'}</div>
-        </div>
-        <div>
-          <div className="text-gray-600">Impact</div>
-          <div className="font-mono">{detail.price_impact !== null ? `${detail.price_impact.toFixed(2)} bps/100M` : '-'}</div>
-        </div>
-        <div>
-          <div className="text-gray-600">Trades</div>
-          <div className="font-mono">{detail.trade_count}</div>
-        </div>
-      </div>
-
-      {showDelta && deltaMid !== null && (
-        <div className="mt-2 pt-2 border-t text-xs">
-          <div className="flex justify-between">
-            <span className="text-gray-600">Δ vs 1h:</span>
-            <span className={`font-mono font-semibold ${deltaMid > 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {deltaMid > 0 ? '+' : ''}{deltaMid.toFixed(1)} bps
-            </span>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-2">
-        <MiniSparkline data={sparklineData} width={200} height={30} />
-      </div>
-    </div>
-  );
-}
-
-// Spread Monitor Table Component
-interface SpreadMonitorTableProps {
-  spreadMetrics: ProTraderMetrics['spread_metrics'];
-}
-
-function SpreadMonitorTable({ spreadMetrics }: SpreadMonitorTableProps) {
-  const spreads = [
-    { name: '5Y-10Y', detail: spreadMetrics.spread_5y_10y },
-    { name: '10Y-30Y', detail: spreadMetrics.spread_10y_30y },
-    { name: '2Y-10Y', detail: spreadMetrics.spread_2y_10y },
-    { name: '2Y-30Y', detail: spreadMetrics.spread_2y_30y },
-  ];
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Spread
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Current
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              High
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Low
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Change
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Z-Score
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Alert
-            </th>
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {spreads.map(({ name, detail }) => (
-            <tr key={name} className={Math.abs(detail.change_bps) > 1 ? 'bg-yellow-50' : ''}>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                {name}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
-                {detail.current.toFixed(1)} bps
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500">
-                {detail.high.toFixed(1)} bps
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500">
-                {detail.low.toFixed(1)} bps
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <SpreadBadge
-                  value={detail.change_bps}
-                  showZScore={detail.z_score !== null && Math.abs(detail.z_score) > 2}
-                  zScore={detail.z_score}
-                />
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm">
-                {detail.z_score !== null ? (
-                  <span className={`font-mono ${
-                    Math.abs(detail.z_score) > 2 ? 'text-red-600 font-bold' : 'text-gray-600'
-                  }`}>
-                    {detail.z_score > 0 ? '+' : ''}{detail.z_score.toFixed(1)} σ
-                  </span>
-                ) : (
-                  <span className="text-gray-400">-</span>
-                )}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                {detail.z_score !== null && Math.abs(detail.z_score) > 2 && (
-                  <span className="text-red-600">⚠️</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }

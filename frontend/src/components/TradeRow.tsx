@@ -16,9 +16,10 @@
  * - "Curve ...": Detected curve trade
  */
 
-import { useState, memo } from 'react';
+import { memo } from 'react';
 import { Trade, Strategy } from '../types/trade';
 import { ColumnConfig } from './Blotter';
+import { getTenorFromTrade } from '../utils/underlierTenor';
 
 /**
  * Props for the TradeRow component.
@@ -143,6 +144,13 @@ function TradeRowComponent({
       case 'tenor':
         return (
           <div className="text-gray-600 text-xs">
+            {getTenorFromTrade(trade)}
+          </div>
+        );
+
+      case 'instrument':
+        return (
+          <div className="text-gray-600 text-xs">
             {trade.instrument || '-'}
           </div>
         );
@@ -261,8 +269,8 @@ function TradeRowComponent({
   return (
     <>
       <tr
-        className={`border-b border-gray-200 hover:bg-gray-50 transition-all ${
-          highlighted ? 'bg-blue-50 ring-2 ring-blue-300' : 'bg-white'
+        className={`border-b border-gray-100 hover:bg-gray-50/70 transition-colors ${
+          highlighted ? 'bg-blue-50 ring-2 ring-blue-200' : 'bg-white'
         } ${
           isLeg ? 'bg-gray-50 border-l-4 border-blue-300' : ''
         }`}
@@ -270,7 +278,7 @@ function TradeRowComponent({
               {visibleColumns.map(col => (
                 <td
                   key={col.id}
-                  className="px-3 py-3 border-r border-gray-200 text-sm align-middle overflow-hidden"
+                  className="px-3 py-2 border-r border-gray-100 text-sm align-middle overflow-hidden"
                   style={{ width: `${col.width}px`, maxWidth: `${col.width}px` }}
                 >
                   <div className="truncate" style={{ maxWidth: `${col.width - 24}px` }}>
