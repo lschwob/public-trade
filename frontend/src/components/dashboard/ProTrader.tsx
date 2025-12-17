@@ -18,6 +18,7 @@ const TIME_WINDOWS = ['10min', '15min', '20min', '30min', '60min'] as const;
 type TimeWindow = typeof TIME_WINDOWS[number];
 
 export default function ProTrader({ proTraderMetrics, proTraderDeltas }: ProTraderProps) {
+  void proTraderDeltas;
   const [activeWindow, setActiveWindow] = useState<TimeWindow>('10min');
   const [showDeltas, setShowDeltas] = useState(false);
 
@@ -307,7 +308,7 @@ interface InstrumentCardProps {
 }
 
 function InstrumentCard({ instrument, detail, formatNotional, formatRate, showDelta, referenceDetail }: InstrumentCardProps) {
-  const deltaMid = showDelta && referenceDetail?.mid !== undefined && detail.mid !== undefined
+  const deltaMid = showDelta && detail.mid !== null && referenceDetail?.mid !== null && referenceDetail?.mid !== undefined
     ? (detail.mid - referenceDetail.mid) * 100 // Convert to bps
     : null;
 

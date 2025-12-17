@@ -68,7 +68,7 @@ export default function FlowMicrostructure({ flowMetrics, currencyMetrics }: Flo
                 outerRadius={100}
                 label={(entry) => `${entry.name}: ${entry.value}`}
               >
-                {actionBreakdownData.map((entry, index) => (
+                {actionBreakdownData.map((_, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>

@@ -36,7 +36,7 @@ function TabButton({ active, onClick, children }: TabButtonProps) {
   );
 }
 
-export default function Dashboard({ analytics, trades, strategies }: DashboardProps) {
+export default function Dashboard({ analytics }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
 
   if (!analytics) {

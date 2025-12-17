@@ -75,7 +75,7 @@ export interface Alert {
 
 export interface CurveMetrics {
   instrument_distribution: Array<{ instrument: string; notional: number; count: number; avg_rate: number | null }>;
-  rate_evolution: Array<{ timestamp: string; [instrument: string]: number }>;
+  rate_evolution: Array<{ timestamp: string; [instrument: string]: number | string }>;
   instrument_spread: Record<string, number>;
   average_rate_by_instrument: Record<string, number>;
 }

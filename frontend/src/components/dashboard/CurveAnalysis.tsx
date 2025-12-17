@@ -9,11 +9,9 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer
 } from 'recharts';
 import { sortByInstrument } from '../../utils/instrumentSort';
-import Heatmap from '../charts/Heatmap';
 
 interface CurveAnalysisProps {
   curveMetrics: CurveMetrics | undefined;

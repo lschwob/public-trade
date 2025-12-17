@@ -9,7 +9,6 @@ interface AlertPanelProps {
 
 export default function AlertPanel({ alerts, onDismiss, onClear }: AlertPanelProps) {
   const [soundEnabled, setSoundEnabled] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const prevAlertsLengthRef = useRef(0);
 
   // Play sound on new alert

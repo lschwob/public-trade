@@ -9,7 +9,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer
 } from 'recharts';
 import Gauge from '../charts/Gauge';
@@ -154,7 +153,7 @@ export default function MarketOverview({ analytics }: MarketOverviewProps) {
                 outerRadius={100}
                 label={(entry) => `${entry.platform}: ${entry.percentage.toFixed(1)}%`}
               >
-                {(analytics.flow_metrics?.platform_market_share.slice(0, 10) || []).map((entry, index) => (
+                {(analytics.flow_metrics?.platform_market_share.slice(0, 10) || []).map((_, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
