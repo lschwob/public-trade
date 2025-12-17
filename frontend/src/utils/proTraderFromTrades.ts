@@ -1,4 +1,5 @@
 import type { ProTraderMetrics, Trade } from '../types/trade';
+import { getTradeExecutionMs } from './tradeTime';
 
 const WINDOWS: Array<{ key: string; minutes: number }> = [
   { key: '10min', minutes: 10 },
@@ -10,11 +11,6 @@ const WINDOWS: Array<{ key: string; minutes: number }> = [
 
 function safe(n: number | undefined | null): number {
   return typeof n === 'number' && Number.isFinite(n) ? n : 0;
-}
-
-function toMs(ts: string): number {
-  const t = new Date(ts).getTime();
-  return Number.isFinite(t) ? t : 0;
 }
 
 function normalizeRateToDecimal(rate: number): number {
@@ -91,7 +87,7 @@ export function computeProTraderMetricsFromTrades(trades: Trade[]): Record<strin
 
   for (const w of WINDOWS) {
     const cutoff = nowMs - w.minutes * 60_000;
-    const recent = trades.filter(t => toMs(t.execution_timestamp) >= cutoff);
+    const recent = trades.filter(t => getTradeExecutionMs(t) >= cutoff);
     if (recent.length === 0) {
       result[w.key] = emptyMetrics(w.minutes);
       continue;
@@ -122,7 +118,7 @@ export function computeProTraderMetricsFromTrades(trades: Trade[]): Record<strin
       entry.vol += n;
       entry.count += 1;
 
-      const ts = toMs(t.execution_timestamp);
+      const ts = getTradeExecutionMs(t);
       if (!entry.last || ts >= entry.last.ts) entry.last = { ts, rDec };
 
       instrumentAgg.set(t.instrument, entry);
@@ -192,7 +188,7 @@ export function computeProTraderMetricsFromTrades(trades: Trade[]): Record<strin
       // Approx trend: compare first & last after sorting by time
       const pts = recent
         .filter(t => t.instrument === instrument && t.fixed_rate_leg1 !== null && t.fixed_rate_leg1 !== undefined)
-        .map(t => ({ ts: toMs(t.execution_timestamp), rDec: normalizeRateToDecimal(t.fixed_rate_leg1!) }))
+        .map(t => ({ ts: getTradeExecutionMs(t), rDec: normalizeRateToDecimal(t.fixed_rate_leg1!) }))
         .filter(p => p.ts > 0)
         .sort((x, y) => x.ts - y.ts);
 

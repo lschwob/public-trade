@@ -10,6 +10,7 @@ import type {
   StrategyMetrics,
   Trade,
 } from '../types/trade';
+import { getTradeExecutionMs } from './tradeTime';
 
 const TENOR_ORDER = ['3M', '6M', '1Y', '2Y', '3Y', '5Y', '7Y', '10Y', '15Y', '20Y', '30Y'] as const;
 
@@ -55,8 +56,9 @@ function hhi(volumes: Record<string, number>): number {
   return sumSq * 10000;
 }
 
-function formatHourKey(ts: string): string {
-  const d = new Date(ts);
+function formatHourKeyFromMs(ms: number): string {
+  if (!ms) return 'Unknown';
+  const d = new Date(ms);
   if (!Number.isFinite(d.getTime())) return 'Unknown';
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -65,10 +67,9 @@ function formatHourKey(ts: string): string {
   return `${yyyy}-${mm}-${dd} ${hh}:00`;
 }
 
-function isInLastMinutes(ts: string, nowMs: number, minutes: number): boolean {
-  const t = new Date(ts).getTime();
-  if (!Number.isFinite(t)) return false;
-  return t >= nowMs - minutes * 60_000;
+function isInLastMinutesMs(ms: number, nowMs: number, minutes: number): boolean {
+  if (!ms) return false;
+  return ms >= nowMs - minutes * 60_000;
 }
 
 function instrumentSortKey(instrument: string): number {
@@ -221,12 +222,12 @@ function normalizeRateToPercent(rate: number): number {
 
 function buildRealTimeMetrics(trades: Trade[], alerts: Alert[] | undefined): RealTimeMetrics {
   const nowMs = Date.now();
-  const vol5 = trades.filter(t => isInLastMinutes(t.execution_timestamp, nowMs, 5)).reduce((a, t) => a + safeNumber(t.notional_eur), 0);
-  const vol15 = trades.filter(t => isInLastMinutes(t.execution_timestamp, nowMs, 15)).reduce((a, t) => a + safeNumber(t.notional_eur), 0);
-  const vol60 = trades.filter(t => isInLastMinutes(t.execution_timestamp, nowMs, 60)).reduce((a, t) => a + safeNumber(t.notional_eur), 0);
-  const trades5 = trades.reduce((a, t) => a + (isInLastMinutes(t.execution_timestamp, nowMs, 5) ? 1 : 0), 0);
+  const vol5 = trades.filter(t => isInLastMinutesMs(getTradeExecutionMs(t), nowMs, 5)).reduce((a, t) => a + safeNumber(t.notional_eur), 0);
+  const vol15 = trades.filter(t => isInLastMinutesMs(getTradeExecutionMs(t), nowMs, 15)).reduce((a, t) => a + safeNumber(t.notional_eur), 0);
+  const vol60 = trades.filter(t => isInLastMinutesMs(getTradeExecutionMs(t), nowMs, 60)).reduce((a, t) => a + safeNumber(t.notional_eur), 0);
+  const trades5 = trades.reduce((a, t) => a + (isInLastMinutesMs(getTradeExecutionMs(t), nowMs, 5) ? 1 : 0), 0);
 
-  const alertCount = (alerts ?? []).reduce((a, al) => a + (isInLastMinutes(al.timestamp, nowMs, 60) ? 1 : 0), 0);
+  const alertCount = (alerts ?? []).reduce((a, al) => a + (isInLastMinutesMs(new Date(al.timestamp).getTime(), nowMs, 60) ? 1 : 0), 0);
 
   // Liquidity score: lightweight heuristic (0..100)
   const score = Math.max(
@@ -241,7 +242,7 @@ function buildRealTimeMetrics(trades: Trade[], alerts: Alert[] | undefined): Rea
   const byInstrument = new Map<string, Array<{ ts: number; ratePct: number }>>();
   for (const t of trades) {
     if (!t.instrument || t.fixed_rate_leg1 === null || t.fixed_rate_leg1 === undefined) continue;
-    const ts = new Date(t.execution_timestamp).getTime();
+    const ts = getTradeExecutionMs(t);
     if (!Number.isFinite(ts) || ts < nowMs - 60 * 60_000) continue;
     const ratePct = normalizeRateToPercent(t.fixed_rate_leg1);
     const arr = byInstrument.get(t.instrument) ?? [];
@@ -397,7 +398,7 @@ export function deriveAnalyticsFromTrades(params: {
 
   const perHour: Record<string, number> = {};
   for (const t of trades) {
-    const k = formatHourKey(t.execution_timestamp);
+    const k = formatHourKeyFromMs(getTradeExecutionMs(t));
     perHour[k] = (perHour[k] ?? 0) + 1;
   }
   const trades_per_hour = Object.entries(perHour)
