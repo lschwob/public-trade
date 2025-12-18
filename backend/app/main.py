@@ -284,8 +284,36 @@ async def process_trades(trades: List[Trade], strategies: List[Strategy] = None)
     # Process pre-classified strategies from internal API
     # Track existing strategy IDs before processing new ones
     existing_strategy_ids_before = set(tracked_strategies.keys())
+
+    # Build an index for quick leg lookup (used to enrich strategies)
+    trade_by_id = {t.dissemination_identifier: t for t in trade_buffer}
     
     for strategy in strategies:
+        # Enrich strategy fields from its legs, so grouped UI can use strategy object only
+        leg_trades: List[Trade] = []
+        for tid in (strategy.legs or []):
+            tr = trade_by_id.get(tid)
+            if tr is not None:
+                leg_trades.append(tr)
+
+        if leg_trades:
+            strategy.action_types = sorted({t.action_type for t in leg_trades if t.action_type})
+            strategy.instruments = sorted({t.instrument for t in leg_trades if t.instrument})
+            strategy.platforms = sorted({t.platform_identifier for t in leg_trades if t.platform_identifier})
+
+            currencies = set()
+            for t in leg_trades:
+                if t.notional_currency_leg1:
+                    currencies.add(t.notional_currency_leg1)
+                if t.notional_currency_leg2:
+                    currencies.add(t.notional_currency_leg2)
+            strategy.currencies = sorted(currencies)
+
+            strategy.maturities = sorted({t.expiration_date for t in leg_trades if t.expiration_date})
+
+            rates = [t.fixed_rate_leg1 for t in leg_trades if t.fixed_rate_leg1 is not None]
+            strategy.avg_rate_leg1 = (sum(rates) / len(rates)) if rates else None
+
         # Assign strategy IDs to trades
         for trade_id in strategy.legs:
             for trade in trade_buffer:

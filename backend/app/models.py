@@ -328,6 +328,19 @@ class Strategy(BaseModel):
     execution_end: datetime
     package_transaction_price: Optional[str] = None
 
+    # ------------------------------------------------------------------------
+    # Enriched / denormalized fields for UI rendering (optional)
+    # These are derived from the strategy legs (trades) and are populated by
+    # the application when available so the frontend can display grouped rows
+    # using ONLY the strategy object (no per-column fallback to trades).
+    # ------------------------------------------------------------------------
+    action_types: List[str] = Field(default_factory=list)
+    instruments: List[str] = Field(default_factory=list)
+    platforms: List[str] = Field(default_factory=list)
+    currencies: List[str] = Field(default_factory=list)
+    maturities: List[str] = Field(default_factory=list)
+    avg_rate_leg1: Optional[float] = None
+
 
 class Alert(BaseModel):
     """
