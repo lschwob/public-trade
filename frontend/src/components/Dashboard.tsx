@@ -36,7 +36,7 @@ function TabButton({ active, onClick, children }: TabButtonProps) {
   );
 }
 
-export default function Dashboard({ analytics }: DashboardProps) {
+export default function Dashboard({ analytics, trades }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
 
   if (!analytics) {
@@ -47,47 +47,35 @@ export default function Dashboard({ analytics }: DashboardProps) {
     );
   }
 
+  // Renamed "Pro Trader" to "Overview" and made it the default/only visible tab
+  // Keeping other components in codebase but hiding navigation as requested.
+
   return (
     <div className="flex flex-col h-full bg-gray-50">
-      {/* Tab Navigation */}
+      {/* Tab Navigation - Simplified */}
       <div className="bg-white border-b border-gray-200 px-6 shadow-sm">
         <nav className="flex space-x-8">
           <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>
-            Market Overview
+            Overview
           </TabButton>
+          {/* Other tabs hidden as requested 
           <TabButton active={activeTab === 'curve'} onClick={() => setActiveTab('curve')}>
             Curve Analysis
           </TabButton>
-          <TabButton active={activeTab === 'flow'} onClick={() => setActiveTab('flow')}>
-            Flow & Microstructure
-          </TabButton>
-          <TabButton active={activeTab === 'risk'} onClick={() => setActiveTab('risk')}>
-            Risk Dashboard
-          </TabButton>
-          <TabButton active={activeTab === 'realtime'} onClick={() => setActiveTab('realtime')}>
-            Real-time Metrics
-          </TabButton>
-          <TabButton active={activeTab === 'protrader'} onClick={() => setActiveTab('protrader')}>
-            Pro Trader
-          </TabButton>
+          ...
+          */}
         </nav>
       </div>
 
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto">
-        {activeTab === 'overview' && <MarketOverview analytics={analytics} />}
-        {activeTab === 'curve' && <CurveAnalysis curveMetrics={analytics.curve_metrics} strategyMetrics={analytics.strategy_metrics} />}
-        {activeTab === 'flow' && <FlowMicrostructure flowMetrics={analytics.flow_metrics} currencyMetrics={analytics.currency_metrics} />}
-        {activeTab === 'risk' && <RiskDashboard riskMetrics={analytics.risk_metrics} />}
-        {activeTab === 'realtime' && <RealTimeMetrics realtimeMetrics={analytics.realtime_metrics} />}
-        {activeTab === 'protrader' && (
-          <ProTrader 
-            proTraderMetrics={analytics.pro_trader_metrics}
-          />
+        {activeTab === 'overview' && (
+           <ProTrader 
+             proTraderMetrics={analytics.pro_trader_metrics} 
+             trades={trades} 
+           />
         )}
       </div>
     </div>
   );
 }
-
-

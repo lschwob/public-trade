@@ -5,9 +5,11 @@ import Dashboard from './components/Dashboard';
 import AlertPanel from './components/AlertPanel';
 import { deriveAnalyticsFromTrades } from './utils/deriveAnalytics';
 import { computeProTraderMetricsFromTrades } from './utils/proTraderFromTrades';
+import { useTheme } from './context/ThemeContext';
 
-function App() {
+function AppContent() {
   const { trades, strategies, alerts, analytics, connected, dismissAlert, clearAlerts } = useWebSocket();
+  const { theme, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<'blotter' | 'dashboard'>('blotter');
   const [showAlerts, setShowAlerts] = useState(true);
   const [universe, setUniverse] = useState<'all' | 'eur'>(() => {
@@ -69,32 +71,43 @@ function App() {
   }, [alerts, analytics, eurUnderlyingRegex, strategies, trades, universe]);
 
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className="flex h-screen bg-gray-100 dark:bg-gray-900 transition-colors duration-200">
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="bg-white shadow-sm border-b border-gray-200">
+        <header className="bg-white dark:bg-[#2b3139] shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors duration-200">
           <div className="px-6 py-4 flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <h1 className="text-2xl font-bold text-gray-900">IRS Monitoring</h1>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">IRS Monitoring</h1>
               <div className="flex items-center space-x-2">
                 <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-gray-600 dark:text-gray-400">
                   {connected ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
             </div>
             
             <div className="flex items-center space-x-3">
+              {/* Theme Toggle */}
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+              >
+                {theme === 'light' ? '🌙' : '☀️'}
+              </button>
+
               {/* Instrument universe filter */}
-              <div className="flex items-center bg-gray-100 rounded-lg p-1">
+              <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
                 <button
                   onClick={() => {
                     setUniverse('all');
                     localStorage.setItem('instrument-universe', 'all');
                   }}
                   className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    universe === 'all' ? 'bg-white shadow text-gray-900' : 'text-gray-700 hover:text-gray-900'
+                    universe === 'all' 
+                      ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' 
+                      : 'text-gray-700 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                   }`}
                   title="Show all instruments"
                 >
@@ -106,7 +119,9 @@ function App() {
                     localStorage.setItem('instrument-universe', 'eur');
                   }}
                   className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    universe === 'eur' ? 'bg-white shadow text-gray-900' : 'text-gray-700 hover:text-gray-900'
+                    universe === 'eur' 
+                      ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' 
+                      : 'text-gray-700 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                   }`}
                   title="Filter to EUR (EURIBOR / ESTR)"
                 >
@@ -120,7 +135,7 @@ function App() {
                 className={`px-4 py-2 rounded-lg font-medium transition-colors relative ${
                   showAlerts
                     ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
                 }`}
               >
                 Alerts
@@ -138,7 +153,7 @@ function App() {
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                     activeTab === 'blotter'
                       ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
                   }`}
                 >
                   Blotter
@@ -148,7 +163,7 @@ function App() {
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                     activeTab === 'dashboard'
                       ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
                   }`}
                 >
                   Dashboard
@@ -159,7 +174,7 @@ function App() {
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-hidden">
+        <main className="flex-1 overflow-hidden bg-white dark:bg-[#1e2329]">
           {activeTab === 'blotter' ? (
             <Blotter trades={filteredTrades} strategies={filteredStrategies} />
           ) : (
@@ -180,4 +195,13 @@ function App() {
   );
 }
 
-export default App;
+// Wrap with ThemeProvider
+import { ThemeProvider } from './context/ThemeContext';
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
+  );
+}
