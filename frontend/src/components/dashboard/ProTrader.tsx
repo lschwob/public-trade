@@ -6,7 +6,7 @@ import SpreadBadge from '../charts/SpreadBadge';
 
 interface ProTraderProps {
   proTraderMetrics?: Record<string, ProTraderMetrics>;
-  trades?: Trade[]; // Added trades prop
+  trades?: Trade[]; 
 }
 
 const TIME_WINDOWS = ['10min', '15min', '20min', '30min', '60min'] as const;
@@ -72,9 +72,9 @@ export default function ProTrader({ proTraderMetrics, trades = [] }: ProTraderPr
     if (!trades.length) return [];
     
     // Filter trades by time window (approximation)
-    const now = new Date();
-    const minutes = parseInt(activeWindow);
-    const cutoff = new Date(now.getTime() - minutes * 60000);
+    // const now = new Date();
+    // const minutes = parseInt(activeWindow);
+    // const cutoff = new Date(now.getTime() - minutes * 60000);
     
     // In a real app, use the actual trade timestamp logic matching the server's window
     // For now, we'll just look at the last N trades or all trades if the window is large
@@ -186,24 +186,24 @@ export default function ProTrader({ proTraderMetrics, trades = [] }: ProTraderPr
   }
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 font-sans">
+    <div className="flex flex-col h-full bg-slate-50 dark:bg-gray-900 font-sans transition-colors duration-200">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
+      <div className="bg-white dark:bg-[#2b3139] border-b border-gray-200 dark:border-gray-700 px-6 py-4 shadow-sm transition-colors duration-200">
         <div className="flex items-center justify-between gap-6">
           <div>
-            <div className="text-xs font-bold text-blue-600 uppercase tracking-wider">Market Overview</div>
-            <div className="text-xl font-bold text-gray-900 tracking-tight">EUR IRS Live Monitor</div>
+            <div className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Market Overview</div>
+            <div className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">EUR IRS Live Monitor</div>
           </div>
 
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
             {TIME_WINDOWS.map((w) => (
               <button
                 key={w}
                 onClick={() => setActiveWindow(w)}
                 className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                   activeWindow === w
-                    ? 'bg-white text-blue-700 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-900'
+                    ? 'bg-white dark:bg-gray-600 text-blue-700 dark:text-blue-300 shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 {w}
@@ -217,25 +217,25 @@ export default function ProTrader({ proTraderMetrics, trades = [] }: ProTraderPr
         
         {/* KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
+          <div className="bg-white dark:bg-[#2b3139] rounded-xl border border-gray-200 dark:border-gray-700 p-4 shadow-sm hover:shadow-md transition-shadow">
             <div className="text-xs font-semibold text-gray-400 uppercase">Volume ({activeWindow})</div>
             <div className="flex items-baseline gap-2 mt-1">
-               <div className="text-2xl font-bold text-gray-900">{formatNotional(totals.totalVolume)}€</div>
-               <span className="text-xs text-green-600 font-medium">LIVE</span>
+               <div className="text-2xl font-bold text-gray-900 dark:text-white">{formatNotional(totals.totalVolume)}€</div>
+               <span className="text-xs text-green-600 dark:text-green-400 font-medium">LIVE</span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
               <div>
                 <span className="text-gray-400 block">Trades</span>
-                <span className="font-mono font-medium text-gray-700">{totals.totalTrades}</span>
+                <span className="font-mono font-medium text-gray-700 dark:text-gray-300">{totals.totalTrades}</span>
               </div>
               <div>
                 <span className="text-gray-400 block">Avg Size</span>
-                <span className="font-mono font-medium text-gray-700">{formatNotional(totals.avgTradeSize)}€</span>
+                <span className="font-mono font-medium text-gray-700 dark:text-gray-300">{formatNotional(totals.avgTradeSize)}€</span>
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
+          <div className="bg-white dark:bg-[#2b3139] rounded-xl border border-gray-200 dark:border-gray-700 p-4 shadow-sm hover:shadow-md transition-shadow">
             <div className="text-xs font-semibold text-gray-400 uppercase">Flow Pressure</div>
             <div className="mt-2">
               <OrderFlowBar
@@ -246,33 +246,33 @@ export default function ProTrader({ proTraderMetrics, trades = [] }: ProTraderPr
             </div>
             <div className="mt-3 flex justify-between items-center text-xs">
               <span className="text-gray-400">Dominant</span>
-              <span className="font-bold text-gray-800 bg-gray-100 px-2 py-0.5 rounded">{totals.dominant}</span>
+              <span className="font-bold text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">{totals.dominant}</span>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
+          <div className="bg-white dark:bg-[#2b3139] rounded-xl border border-gray-200 dark:border-gray-700 p-4 shadow-sm hover:shadow-md transition-shadow">
             <div className="text-xs font-semibold text-gray-400 uppercase">Activity</div>
             <div className="mt-2 space-y-2">
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-600">New Prints</span>
-                <span className="font-mono font-bold text-gray-900">{totals.newTrades}</span>
+                <span className="text-gray-600 dark:text-gray-400">New Prints</span>
+                <span className="font-mono font-bold text-gray-900 dark:text-white">{totals.newTrades}</span>
               </div>
               <div className="flex justify-between items-center text-sm">
-                 <span className="text-gray-600">Large Blocks</span>
-                 <span className={`font-mono font-bold px-1.5 rounded ${totals.largeBlocks > 0 ? 'bg-orange-100 text-orange-700' : 'text-gray-400'}`}>
+                 <span className="text-gray-600 dark:text-gray-400">Large Blocks</span>
+                 <span className={`font-mono font-bold px-1.5 rounded ${totals.largeBlocks > 0 ? 'bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300' : 'text-gray-400'}`}>
                     {totals.largeBlocks}
                  </span>
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
+          <div className="bg-white dark:bg-[#2b3139] rounded-xl border border-gray-200 dark:border-gray-700 p-4 shadow-sm hover:shadow-md transition-shadow">
             <div className="text-xs font-semibold text-gray-400 uppercase">Alerts</div>
             <div className="flex items-center gap-3 mt-1">
-               <div className="text-3xl font-bold text-gray-900">{totals.alertsCount}</div>
+               <div className="text-3xl font-bold text-gray-900 dark:text-white">{totals.alertsCount}</div>
                {totals.alertsCount > 0 && <span className="animate-pulse w-2 h-2 rounded-full bg-red-500"></span>}
             </div>
-            <div className="text-xs text-gray-500 mt-2">
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
               Actionable signals in window
             </div>
           </div>
@@ -281,15 +281,15 @@ export default function ProTrader({ proTraderMetrics, trades = [] }: ProTraderPr
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
             
             {/* Biggest Trades by Tenor */}
-            <div className="xl:col-span-1 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-                 <h3 className="font-bold text-gray-800 text-sm">Top Trades by Tenor</h3>
-                 <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">MAX SIZE</span>
+            <div className="xl:col-span-1 bg-white dark:bg-[#2b3139] rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden flex flex-col">
+              <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-[#2b3139] flex justify-between items-center">
+                 <h3 className="font-bold text-gray-800 dark:text-gray-200 text-sm">Top Trades by Tenor</h3>
+                 <span className="text-[10px] bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full font-bold">MAX SIZE</span>
               </div>
               <div className="flex-1 overflow-auto">
                  {biggestTradesByTenor.length > 0 ? (
                    <table className="w-full text-sm text-left">
-                     <thead className="text-xs text-gray-400 bg-gray-50 uppercase font-semibold">
+                     <thead className="text-xs text-gray-400 bg-gray-50 dark:bg-gray-800 uppercase font-semibold">
                        <tr>
                          <th className="px-4 py-2 font-medium">Tenor</th>
                          <th className="px-4 py-2 font-medium text-right">Size</th>
@@ -297,28 +297,24 @@ export default function ProTrader({ proTraderMetrics, trades = [] }: ProTraderPr
                          <th className="px-4 py-2 font-medium text-right">Price</th>
                        </tr>
                      </thead>
-                     <tbody className="divide-y divide-gray-100">
+                     <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                         {biggestTradesByTenor.map(({ inst, trade }) => {
                            const size = Math.max(trade.notional_amount_leg1 || 0, trade.notional_amount_leg2 || 0);
-                           const isBuy = trade.action_type === 'NEWT' || trade.action_type === 'MODI'; // Simplification
-                           // Better buy/sell logic:
-                           // Usually inferred from initiator or price vs mid, but here we just use side if available or color code arbitrarily based on rate?
-                           // Let's rely on standard representation or just display 'Trade'.
-                           // Actually, we don't have side explicit in trade obj (only leg1/leg2 payers).
-                           // We will color code the size column neutrally or based on 'action'.
                            
                            return (
-                             <tr key={inst} className="hover:bg-gray-50/50 transition-colors">
-                               <td className="px-4 py-2 font-bold text-gray-700">{inst}</td>
-                               <td className="px-4 py-2 text-right font-mono font-semibold text-gray-900">{formatNotional(size)}</td>
+                             <tr key={inst} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/50 transition-colors">
+                               <td className="px-4 py-2 font-bold text-gray-700 dark:text-gray-300">{inst}</td>
+                               <td className="px-4 py-2 text-right font-mono font-semibold text-gray-900 dark:text-white">{formatNotional(size)}</td>
                                <td className="px-4 py-2 text-center">
                                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                                      trade.action_type === 'TERM' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                                      trade.action_type === 'TERM' 
+                                        ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300' 
+                                        : 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
                                   }`}>
                                      {trade.action_type}
                                   </span>
                                </td>
-                               <td className="px-4 py-2 text-right font-mono text-cyan-700">
+                               <td className="px-4 py-2 text-right font-mono text-cyan-700 dark:text-cyan-400">
                                  {(trade.fixed_rate_leg1 !== undefined) ? `${(Math.abs(trade.fixed_rate_leg1) * (Math.abs(trade.fixed_rate_leg1) < 1 ? 100 : 1)).toFixed(3)}%` : '-'}
                                </td>
                              </tr>
@@ -333,13 +329,13 @@ export default function ProTrader({ proTraderMetrics, trades = [] }: ProTraderPr
             </div>
 
             {/* Rates Snapshot */}
-            <div className="xl:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50">
-                 <h3 className="font-bold text-gray-800 text-sm">Market Rates</h3>
+            <div className="xl:col-span-2 bg-white dark:bg-[#2b3139] rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden flex flex-col">
+              <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-[#2b3139]">
+                 <h3 className="font-bold text-gray-800 dark:text-gray-200 text-sm">Market Rates</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-xs text-gray-400 uppercase font-semibold">
+                  <thead className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-400 uppercase font-semibold">
                     <tr>
                       <th className="px-5 py-2 text-left">Tenor</th>
                       <th className="px-5 py-2 text-right">Mid</th>
@@ -349,15 +345,15 @@ export default function ProTrader({ proTraderMetrics, trades = [] }: ProTraderPr
                       <th className="px-5 py-2 text-right">Vol</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                     {topRates.map(({ instrument, d }) => (
-                      <tr key={instrument} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-5 py-2.5 font-bold text-gray-800">{instrument}</td>
-                        <td className="px-5 py-2.5 text-right font-mono text-gray-900 font-medium">{formatRatePct(d.mid)}</td>
-                        <td className="px-5 py-2.5 text-right font-mono text-gray-500">{formatRatePct(d.high)}</td>
-                        <td className="px-5 py-2.5 text-right font-mono text-gray-500">{formatRatePct(d.low)}</td>
-                        <td className="px-5 py-2.5 text-right font-mono text-gray-600">{formatBps(d.bid_ask_spread, 1)}</td>
-                        <td className="px-5 py-2.5 text-right font-mono text-gray-600">{d.volatility !== null ? `${d.volatility.toFixed(1)}%` : '-'}</td>
+                      <tr key={instrument} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        <td className="px-5 py-2.5 font-bold text-gray-800 dark:text-gray-200">{instrument}</td>
+                        <td className="px-5 py-2.5 text-right font-mono text-gray-900 dark:text-white font-medium">{formatRatePct(d.mid)}</td>
+                        <td className="px-5 py-2.5 text-right font-mono text-gray-500 dark:text-gray-400">{formatRatePct(d.high)}</td>
+                        <td className="px-5 py-2.5 text-right font-mono text-gray-500 dark:text-gray-400">{formatRatePct(d.low)}</td>
+                        <td className="px-5 py-2.5 text-right font-mono text-gray-600 dark:text-gray-400">{formatBps(d.bid_ask_spread, 1)}</td>
+                        <td className="px-5 py-2.5 text-right font-mono text-gray-600 dark:text-gray-400">{d.volatility !== null ? `${d.volatility.toFixed(1)}%` : '-'}</td>
                       </tr>
                     ))}
                     {topRates.length === 0 && (
@@ -375,14 +371,14 @@ export default function ProTrader({ proTraderMetrics, trades = [] }: ProTraderPr
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
            {/* Flow Analysis Table */}
-           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-             <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-                 <h3 className="font-bold text-gray-800 text-sm">Flow Analysis</h3>
+           <div className="bg-white dark:bg-[#2b3139] rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+             <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-[#2b3139] flex justify-between items-center">
+                 <h3 className="font-bold text-gray-800 dark:text-gray-200 text-sm">Flow Analysis</h3>
                  <span className="text-xs text-gray-400">15m vs 30m</span>
              </div>
              <div className="overflow-x-auto">
                <table className="w-full text-sm">
-                 <thead className="bg-gray-50 text-xs text-gray-400 uppercase font-semibold">
+                 <thead className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-400 uppercase font-semibold">
                    <tr>
                      <th className="px-5 py-2 text-left">Inst</th>
                      <th className="px-5 py-2 text-left">Pressure</th>
@@ -391,26 +387,26 @@ export default function ProTrader({ proTraderMetrics, trades = [] }: ProTraderPr
                      <th className="px-5 py-2 text-right">Vol (30m)</th>
                    </tr>
                  </thead>
-                 <tbody className="divide-y divide-gray-100">
+                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                    {volume15v30.rows.slice(0, 8).map((r) => {
                       const flowColor =
                         r.direction15 === 'BUY_PRESSURE'
-                          ? 'text-green-700 bg-green-50'
+                          ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/30'
                           : r.direction15 === 'SELL_PRESSURE'
-                          ? 'text-red-700 bg-red-50'
-                          : 'text-gray-600 bg-gray-100';
+                          ? 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/30'
+                          : 'text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800';
 
                       return (
-                        <tr key={r.instrument} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-5 py-2 font-bold text-gray-800">{r.instrument}</td>
+                        <tr key={r.instrument} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                          <td className="px-5 py-2 font-bold text-gray-800 dark:text-gray-200">{r.instrument}</td>
                           <td className="px-5 py-2">
                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${flowColor}`}>
                                 {flowLabel(r.direction15)}
                              </span>
                           </td>
-                          <td className="px-5 py-2 text-right font-mono font-medium text-gray-900">{formatNotional(r.v15)}</td>
-                          <td className="px-5 py-2 text-right font-mono text-gray-500">{r.t15}</td>
-                          <td className="px-5 py-2 text-right font-mono text-gray-500">{formatNotional(r.v30)}</td>
+                          <td className="px-5 py-2 text-right font-mono font-medium text-gray-900 dark:text-white">{formatNotional(r.v15)}</td>
+                          <td className="px-5 py-2 text-right font-mono text-gray-500 dark:text-gray-400">{r.t15}</td>
+                          <td className="px-5 py-2 text-right font-mono text-gray-500 dark:text-gray-400">{formatNotional(r.v30)}</td>
                         </tr>
                       )
                    })}
@@ -420,9 +416,9 @@ export default function ProTrader({ proTraderMetrics, trades = [] }: ProTraderPr
            </div>
 
            {/* Alerts List */}
-           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50">
-                 <h3 className="font-bold text-gray-800 text-sm">Active Alerts</h3>
+           <div className="bg-white dark:bg-[#2b3139] rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-[#2b3139]">
+                 <h3 className="font-bold text-gray-800 dark:text-gray-200 text-sm">Active Alerts</h3>
               </div>
               <div className="p-4 space-y-2 max-h-[300px] overflow-y-auto">
                  {current.alerts && current.alerts.length > 0 ? (

@@ -27,10 +27,6 @@ function StrategyRowComponent({
 }: StrategyRowProps) {
 
   const firstTrade = trades[0];
-  
-  // Strategy Tenor Fix: Use the instrument column if available, or derive it.
-  // For strategies, 'Tenor' often means the pair (e.g., "5Y10Y"). 
-  // We prioritize the instrument field from the first trade if it seems like a valid combo.
   const displayTenor = firstTrade?.instrument || getTenorFromTrade(firstTrade) || '-';
 
   const formatNotional = (notional: number) => {
@@ -45,50 +41,48 @@ function StrategyRowComponent({
     return `${(val * 100).toFixed(4)}`; 
   };
   
-  // Calculate average rate of the strategy (simple avg of legs for display)
   const avgRate = trades.reduce((acc, t) => acc + (t.fixed_rate_leg1 || 0), 0) / (trades.length || 1);
 
   const bgClass = highlighted 
-    ? 'bg-purple-900/30' 
-    : rowIdx % 2 === 0 ? 'bg-[#1e2329]' : 'bg-[#252b33]';
+    ? 'bg-purple-100 dark:bg-purple-900/30' 
+    : rowIdx % 2 === 0 ? 'bg-white dark:bg-[#1e2329]' : 'bg-gray-50/50 dark:bg-[#252b33]';
 
   const renderCell = (col: ColumnConfig) => {
     switch (col.id) {
       case 'time':
-         return <span className="font-mono text-gray-400">{firstTrade.execution_timestamp.split('T')[1]?.split('.')[0]}</span>;
+         return <span className="font-mono text-gray-600 dark:text-gray-400">{firstTrade.execution_timestamp.split('T')[1]?.split('.')[0]}</span>;
       
       case 'action':
          return (
             <button 
               onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
-              className="text-[10px] bg-purple-900/50 text-purple-300 px-1 rounded hover:bg-purple-800 border border-purple-700/50"
+              className="text-[10px] bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 px-1 rounded hover:bg-purple-200 dark:hover:bg-purple-800 border border-purple-300 dark:border-purple-700/50"
             >
               {isExpanded ? '▼' : '▶'} STRAT
             </button>
          );
       
       case 'underlying':
-         return <span className="text-purple-300 font-medium truncate block">{strategy.underlying_name}</span>;
+         return <span className="text-purple-700 dark:text-purple-300 font-medium truncate block">{strategy.underlying_name}</span>;
       
       case 'notional':
-         return <span className="font-mono text-gray-200">{formatNotional(strategy.total_notional_eur)}</span>;
+         return <span className="font-mono text-gray-800 dark:text-gray-200">{formatNotional(strategy.total_notional_eur)}</span>;
          
       case 'rate':
-         return <span className="font-mono text-cyan-300">{formatRate(avgRate)}</span>;
+         return <span className="font-mono text-cyan-600 dark:text-cyan-300">{formatRate(avgRate)}</span>;
 
       case 'instrument':
       case 'tenor':
-         // FIX: Ensure Tenor displays correctly for Strategies
-         return <span className="text-yellow-200/80 font-bold">{displayTenor}</span>;
+         return <span className="text-yellow-600 dark:text-yellow-200/80 font-bold">{displayTenor}</span>;
       
       case 'strategy':
-         return <span className="text-purple-300 font-bold">{strategy.strategy_type}</span>;
+         return <span className="text-purple-700 dark:text-purple-300 font-bold">{strategy.strategy_type}</span>;
       
       case 'platform':
          return <span className="text-gray-500">{firstTrade.platform_identifier}</span>;
          
       case 'package':
-         return strategy.package_transaction_price ? <span className="text-blue-400 text-[10px]">📦</span> : null;
+         return strategy.package_transaction_price ? <span className="text-blue-500 dark:text-blue-400 text-[10px]">📦</span> : null;
 
       default:
          return null;
@@ -97,7 +91,7 @@ function StrategyRowComponent({
 
   return (
     <>
-      <tr className={`hover:bg-[#323a45] transition-colors border-b border-gray-800/50 ${bgClass} cursor-pointer`} onClick={onToggleExpand}>
+      <tr className={`hover:bg-gray-100 dark:hover:bg-[#323a45] transition-colors border-b border-gray-200 dark:border-gray-800/50 ${bgClass} cursor-pointer`} onClick={onToggleExpand}>
         {visibleColumns.map(col => (
           <td key={col.id} className={`px-2 py-1 text-xs whitespace-nowrap text-${col.align || 'left'} overflow-hidden border-l border-transparent`}>
              {/* Add a left border indicator for strategies */}
@@ -108,10 +102,10 @@ function StrategyRowComponent({
       </tr>
       
       {isExpanded && (
-         <tr className="bg-[#1a1e23]">
+         <tr className="bg-gray-50 dark:bg-[#1a1e23]">
            <td colSpan={visibleColumns.length} className="p-0">
               <div className="border-l-2 border-purple-500 pl-2 py-1">
-                 <div className="px-2 py-1 text-[10px] text-purple-400 bg-[#2b2533] border-b border-gray-800">
+                 <div className="px-2 py-1 text-[10px] text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-[#2b2533] border-b border-gray-200 dark:border-gray-800">
                     Strategy Breakdown: {strategy.strategy_type} ({trades.length} legs)
                  </div>
                  <table className="w-full">

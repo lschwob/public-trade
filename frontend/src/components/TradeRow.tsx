@@ -28,7 +28,14 @@ function TradeRowComponent({
 }: TradeRowProps) {
   
   const formatTime = (timestamp: string) => {
-    return timestamp.split('T')[1]?.split('.')[0] || timestamp;
+    if (!timestamp) return '-';
+    // Try to split on 'T' for ISO, or space for standard SQL format
+    if (timestamp.includes('T')) {
+        return timestamp.split('T')[1]?.split('.')[0] || timestamp;
+    } else if (timestamp.includes(' ')) {
+        return timestamp.split(' ')[1] || timestamp;
+    }
+    return timestamp;
   };
 
   const formatNotional = (notional: number, currency: string) => {
@@ -49,41 +56,41 @@ function TradeRowComponent({
   const getActionColor = (action: string) => {
     // Bank style: simple text colors
     switch (action) {
-      case 'NEWT': return 'text-green-400 font-bold';
-      case 'MODI': return 'text-yellow-400';
-      case 'TERM': return 'text-red-400';
-      default: return 'text-gray-400';
+      case 'NEWT': return 'text-green-600 dark:text-green-400 font-bold';
+      case 'MODI': return 'text-yellow-600 dark:text-yellow-400';
+      case 'TERM': return 'text-red-600 dark:text-red-400';
+      default: return 'text-gray-500 dark:text-gray-400';
     }
   };
 
   // Alternate row colors for better readability
   const bgClass = highlighted 
-    ? 'bg-blue-900/30' 
+    ? 'bg-blue-100 dark:bg-blue-900/30' 
     : isLeg 
-      ? 'bg-[#1e2329]' 
-      : rowIdx % 2 === 0 ? 'bg-[#1e2329]' : 'bg-[#252b33]';
+      ? 'bg-gray-50 dark:bg-[#1e2329]' 
+      : rowIdx % 2 === 0 ? 'bg-white dark:bg-[#1e2329]' : 'bg-gray-50/50 dark:bg-[#252b33]';
 
   const renderCell = (col: ColumnConfig) => {
     switch (col.id) {
       case 'time':
-        return <span className="font-mono text-gray-400">{formatTime(trade.execution_timestamp)}</span>;
+        return <span className="font-mono text-gray-600 dark:text-gray-400">{formatTime(trade.execution_timestamp)}</span>;
       
       case 'action':
         return <span className={`text-[10px] px-1 rounded ${getActionColor(trade.action_type)}`}>{trade.action_type}</span>;
       
       case 'underlying':
-        return <span className="text-gray-300 truncate block" title={trade.unique_product_identifier_underlier_name}>{trade.unique_product_identifier_underlier_name}</span>;
+        return <span className="text-gray-700 dark:text-gray-300 truncate block" title={trade.unique_product_identifier_underlier_name}>{trade.unique_product_identifier_underlier_name}</span>;
       
       case 'notional':
         const notional = Math.max(trade.notional_amount_leg1 || 0, trade.notional_amount_leg2 || 0);
-        return <span className="font-mono font-medium text-gray-200">{formatNotional(notional, trade.notional_currency_leg1)}</span>;
+        return <span className="font-mono font-medium text-gray-800 dark:text-gray-200">{formatNotional(notional, trade.notional_currency_leg1)}</span>;
       
       case 'rate':
-        return <span className="font-mono text-cyan-300">{formatRate(trade.fixed_rate_leg1)}</span>;
+        return <span className="font-mono text-cyan-600 dark:text-cyan-300">{formatRate(trade.fixed_rate_leg1)}</span>;
       
       case 'instrument':
       case 'tenor': // Fallback to instrument if tenor requested
-        return <span className="text-yellow-200/80 font-medium">{trade.instrument || getTenorFromTrade(trade)}</span>;
+        return <span className="text-yellow-600 dark:text-yellow-200/80 font-medium">{trade.instrument || getTenorFromTrade(trade)}</span>;
       
       case 'package':
         return (
@@ -91,7 +98,7 @@ function TradeRowComponent({
              {hasLegs && (
                <button 
                  onClick={(e) => { e.stopPropagation(); onToggleExpand?.(); }}
-                 className="text-[10px] bg-blue-900/50 text-blue-300 px-1 rounded hover:bg-blue-800 transition"
+                 className="text-[10px] bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 px-1 rounded hover:bg-blue-200 dark:hover:bg-blue-800 transition"
                >
                  {isExpanded ? '▼' : '▶'} {trade.package_legs_count || trade.package_legs?.length || 'Pkg'}
                </button>
@@ -102,9 +109,9 @@ function TradeRowComponent({
       case 'strategy':
         // If strategy exists, show it. If not, and it's a package, show 'Package'.
         const strat = strategies.find(s => s.strategy_id === trade.strategy_id);
-        if (strat) return <span className="text-purple-300">{strat.strategy_type}</span>;
-        if (trade.package_indicator) return <span className="text-gray-500 italic">Package</span>;
-        return <span className="text-gray-600">-</span>;
+        if (strat) return <span className="text-purple-600 dark:text-purple-300">{strat.strategy_type}</span>;
+        if (trade.package_indicator) return <span className="text-gray-400 dark:text-gray-500 italic">Package</span>;
+        return <span className="text-gray-400 dark:text-gray-600">-</span>;
 
       case 'platform':
         return <span className="text-gray-500">{trade.platform_identifier}</span>;
@@ -116,7 +123,7 @@ function TradeRowComponent({
 
   return (
     <>
-      <tr className={`hover:bg-[#323a45] transition-colors border-b border-gray-800/50 ${bgClass}`}>
+      <tr className={`hover:bg-gray-100 dark:hover:bg-[#323a45] transition-colors border-b border-gray-200 dark:border-gray-800/50 ${bgClass}`}>
         {visibleColumns.map(col => (
           <td key={col.id} className={`px-2 py-1 text-xs whitespace-nowrap text-${col.align || 'left'} overflow-hidden`}>
             {renderCell(col)}
@@ -126,7 +133,7 @@ function TradeRowComponent({
       
       {/* Expanded Legs */}
       {isExpanded && hasLegs && trade.package_legs && (
-        <tr className="bg-[#1a1e23]">
+        <tr className="bg-gray-50 dark:bg-[#1a1e23]">
           <td colSpan={visibleColumns.length} className="p-0">
              <div className="border-l-2 border-blue-500 pl-2 py-1">
                 <table className="w-full">
