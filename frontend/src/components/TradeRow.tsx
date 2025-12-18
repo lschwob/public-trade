@@ -21,6 +21,22 @@ import { Trade, Strategy } from '../types/trade';
 import { ColumnConfig } from './Blotter';
 import { getTenorFromTrade } from '../utils/underlierTenor';
 
+function sameColumns(a: ColumnConfig[], b: ColumnConfig[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]!.id !== b[i]!.id) return false;
+    if (a[i]!.width !== b[i]!.width) return false;
+  }
+  return true;
+}
+
+function getStrategyTypeForTrade(trade: Trade, strategies: Strategy[] | undefined): string | null {
+  const sid = trade.strategy_id;
+  if (!sid || !strategies || strategies.length === 0) return null;
+  const s = strategies.find(x => x.strategy_id === sid);
+  return s?.strategy_type ?? null;
+}
+
 /**
  * Props for the TradeRow component.
  */
@@ -347,17 +363,22 @@ function TradeRowComponent({
 // Memoize TradeRow to prevent unnecessary re-renders
 // Only re-render if trade data, highlighted status, or expansion state changes
 export default memo(TradeRowComponent, (prevProps, nextProps) => {
+  const prevStrategyType = getStrategyTypeForTrade(prevProps.trade, prevProps.strategies);
+  const nextStrategyType = getStrategyTypeForTrade(nextProps.trade, nextProps.strategies);
+
   return (
     prevProps.trade.dissemination_identifier === nextProps.trade.dissemination_identifier &&
     prevProps.highlighted === nextProps.highlighted &&
     prevProps.isLeg === nextProps.isLeg &&
     prevProps.isExpanded === nextProps.isExpanded &&
     prevProps.hasLegs === nextProps.hasLegs &&
-    prevProps.visibleColumns.length === nextProps.visibleColumns.length &&
+    sameColumns(prevProps.visibleColumns, nextProps.visibleColumns) &&
     // Check if the trade data has actually changed by comparing key fields
     prevProps.trade.execution_timestamp === nextProps.trade.execution_timestamp &&
     prevProps.trade.notional_eur === nextProps.trade.notional_eur &&
     prevProps.trade.fixed_rate_leg1 === nextProps.trade.fixed_rate_leg1 &&
-    prevProps.trade.strategy_id === nextProps.trade.strategy_id
+    prevProps.trade.strategy_id === nextProps.trade.strategy_id &&
+    // Ensure rerender when strategy enrichment arrives/changes (affects Strategy column label)
+    prevStrategyType === nextStrategyType
   );
 });

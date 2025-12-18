@@ -9,7 +9,16 @@ import { memo } from 'react';
 import { Trade, Strategy } from '../types/trade';
 import { ColumnConfig } from './Blotter';
 import TradeRow from './TradeRow';
-import { extractUnderlierTenor, getTenorFromTrade } from '../utils/underlierTenor';
+import { extractUnderlierTenor } from '../utils/underlierTenor';
+
+function sameColumns(a: ColumnConfig[], b: ColumnConfig[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]!.id !== b[i]!.id) return false;
+    if (a[i]!.width !== b[i]!.width) return false;
+  }
+  return true;
+}
 
 /**
  * Props for the StrategyRow component.
@@ -67,34 +76,21 @@ function StrategyRowComponent({
   };
 
   const strategyLabel = formatStrategyLabel(strategy);
-  const firstTrade = trades[0];
+  const legsCount = strategy.legs?.length ?? trades.length;
 
   const renderCell = (columnId: string) => {
     switch (columnId) {
       case 'time':
         return (
           <div className="text-gray-700 font-mono text-sm font-semibold">
-            {formatTime(firstTrade.execution_timestamp)}
+            {formatTime(strategy.execution_start)}
           </div>
         );
       
       case 'action':
         return (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleExpand();
-              }}
-              className={`px-2 py-1 rounded text-xs font-semibold transition-colors ${
-                isExpanded 
-                  ? 'bg-purple-600 text-white hover:bg-purple-700' 
-                  : 'bg-purple-100 text-purple-800 hover:bg-purple-200'
-              }`}
-              title={isExpanded ? 'Collapse strategy' : `Expand ${trades.length} legs`}
-            >
-              {isExpanded ? '▼' : '▶'} {trades.length}
-            </button>
+          <div className="text-gray-700 text-xs font-semibold">
+            {strategy.action_types && strategy.action_types.length > 0 ? strategy.action_types.join(' / ') : '-'}
           </div>
         );
       
@@ -108,37 +104,30 @@ function StrategyRowComponent({
       case 'notional':
         return (
           <div className="text-gray-900 font-medium text-xs">
-            {formatEur(strategy.total_notional_eur)}
+            {strategy.total_notional_eur ? `${formatEur(strategy.total_notional_eur)} EUR` : '-'}
           </div>
         );
       
       case 'tenor':
         return (
           <div className="text-gray-600 text-xs">
-            {extractUnderlierTenor(strategy.underlying_name) ?? getTenorFromTrade(firstTrade)}
+            {extractUnderlierTenor(strategy.underlying_name) ?? '-'}
           </div>
         );
 
       case 'instrument':
         return (
           <div className="text-gray-600 text-xs">
-            {firstTrade.instrument || '-'}
+            {strategy.instruments && strategy.instruments.length > 0 ? strategy.instruments.join(' / ') : '-'}
           </div>
         );
       
       case 'rate':
-        // Show average rate or first trade rate
-        const avgRate = trades
-          .map(t => t.fixed_rate_leg1)
-          .filter((r): r is number => r !== undefined && r !== null)
-          .reduce((sum, r, _, arr) => sum + r / arr.length, 0);
-        
-        // Check if rate is already in percentage or in decimal
-        const displayRate = Math.abs(avgRate) > 1 ? avgRate : avgRate * 100;
-        
+        const avgRate = strategy.avg_rate_leg1 ?? null;
+        const displayRate = typeof avgRate === 'number' ? (Math.abs(avgRate) > 1 ? avgRate : avgRate * 100) : null;
         return (
           <div className="text-gray-700 font-mono text-xs">
-            {avgRate !== 0 ? `${displayRate.toFixed(4)}%` : '-'}
+            {displayRate !== null ? `${displayRate.toFixed(4)}%` : '-'}
           </div>
         );
       
@@ -148,9 +137,20 @@ function StrategyRowComponent({
             {strategy.package_transaction_price && (
               <span className="text-blue-600" title="Package strategy">📦</span>
             )}
-            <span className="text-xs text-gray-500">
-              {trades.length} leg{trades.length > 1 ? 's' : ''}
-            </span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleExpand();
+              }}
+              className={`px-2 py-1 rounded text-xs font-semibold transition-colors ${
+                isExpanded
+                  ? 'bg-purple-600 text-white hover:bg-purple-700'
+                  : 'bg-purple-100 text-purple-800 hover:bg-purple-200'
+              }`}
+              title={isExpanded ? 'Collapse strategy' : `Expand ${legsCount} legs`}
+            >
+              {isExpanded ? '▼' : '▶'} {legsCount}
+            </button>
           </div>
         );
       
@@ -164,11 +164,9 @@ function StrategyRowComponent({
         );
       
       case 'platform':
-        // Show unique platforms
-        const platforms = Array.from(new Set(trades.map(t => t.platform_identifier).filter(Boolean)));
         return (
           <div className="text-gray-600 text-xs">
-            {platforms.length > 0 ? platforms.join(', ') : '-'}
+            {strategy.platforms && strategy.platforms.length > 0 ? strategy.platforms.join(', ') : '-'}
           </div>
         );
       
@@ -187,23 +185,14 @@ function StrategyRowComponent({
         );
       
       case 'currency':
-        // Show currencies from trades
-        const currencies = Array.from(new Set([
-          ...trades.map(t => t.notional_currency_leg1),
-          ...trades.map(t => t.notional_currency_leg2)
-        ].filter(Boolean)));
         return (
           <div className="text-gray-600 text-xs">
-            {currencies.length > 0 ? currencies.join(' / ') : '-'}
+            {strategy.currencies && strategy.currencies.length > 0 ? strategy.currencies.join(' / ') : '-'}
           </div>
         );
       
       case 'maturity':
-        // Show range of maturities
-        const maturities = trades
-          .map(t => t.expiration_date)
-          .filter((d): d is string => Boolean(d))
-          .sort();
+        const maturities = (strategy.maturities ?? []).filter(Boolean).slice().sort();
         return (
           <div className="text-gray-600 text-xs">
             {maturities.length > 0 
@@ -255,17 +244,26 @@ function StrategyRowComponent({
                   Execution: {formatTime(strategy.execution_start)} - {formatTime(strategy.execution_end)}
                 </div>
               </div>
-              <div className="divide-y divide-purple-200">
-                {trades.map((trade, index) => (
-                  <TradeRow
-                    key={trade.dissemination_identifier || index}
-                    trade={trade}
-                    highlighted={false}
-                    isLeg={true}
-                    visibleColumns={visibleColumns}
-                    strategies={strategies}
-                  />
-                ))}
+              <div className="bg-white/50">
+                <table className="w-full border-collapse" style={{ tableLayout: 'fixed', width: '100%' }}>
+                  <colgroup>
+                    {visibleColumns.map(col => (
+                      <col key={col.id} style={{ width: `${col.width}px` }} />
+                    ))}
+                  </colgroup>
+                  <tbody className="divide-y divide-purple-200">
+                    {trades.map((trade, index) => (
+                      <TradeRow
+                        key={trade.dissemination_identifier || index}
+                        trade={trade}
+                        highlighted={false}
+                        isLeg={true}
+                        visibleColumns={visibleColumns}
+                        strategies={strategies}
+                      />
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </td>
@@ -282,9 +280,20 @@ export default memo(StrategyRowComponent, (prevProps, nextProps) => {
     prevProps.strategy.strategy_id === nextProps.strategy.strategy_id &&
     prevProps.highlighted === nextProps.highlighted &&
     prevProps.isExpanded === nextProps.isExpanded &&
-    prevProps.visibleColumns.length === nextProps.visibleColumns.length &&
+    sameColumns(prevProps.visibleColumns, nextProps.visibleColumns) &&
     // Check if the strategy data has actually changed
     prevProps.strategy.total_notional_eur === nextProps.strategy.total_notional_eur &&
+    prevProps.strategy.strategy_type === nextProps.strategy.strategy_type &&
+    prevProps.strategy.underlying_name === nextProps.strategy.underlying_name &&
+    prevProps.strategy.execution_start === nextProps.strategy.execution_start &&
+    prevProps.strategy.execution_end === nextProps.strategy.execution_end &&
+    prevProps.strategy.package_transaction_price === nextProps.strategy.package_transaction_price &&
+    prevProps.strategy.avg_rate_leg1 === nextProps.strategy.avg_rate_leg1 &&
+    (prevProps.strategy.action_types?.join('|') ?? '') === (nextProps.strategy.action_types?.join('|') ?? '') &&
+    (prevProps.strategy.instruments?.join('|') ?? '') === (nextProps.strategy.instruments?.join('|') ?? '') &&
+    (prevProps.strategy.platforms?.join('|') ?? '') === (nextProps.strategy.platforms?.join('|') ?? '') &&
+    (prevProps.strategy.currencies?.join('|') ?? '') === (nextProps.strategy.currencies?.join('|') ?? '') &&
+    (prevProps.strategy.maturities?.join('|') ?? '') === (nextProps.strategy.maturities?.join('|') ?? '') &&
     prevProps.trades.length === nextProps.trades.length &&
     // Compare first trade's timestamp to detect if trades changed
     prevProps.trades[0]?.execution_timestamp === nextProps.trades[0]?.execution_timestamp

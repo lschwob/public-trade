@@ -60,6 +60,14 @@ export interface Strategy {
   execution_start: string;
   execution_end: string;
   package_transaction_price?: string;
+
+  // Enriched fields (optional): derived from legs server-side for grouped blotter display
+  action_types?: string[];
+  instruments?: string[];
+  platforms?: string[];
+  currencies?: string[];
+  maturities?: string[];
+  avg_rate_leg1?: number | null;
 }
 
 export interface Alert {
