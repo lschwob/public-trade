@@ -325,7 +325,9 @@ function buildStrategyMetrics(strategies: Strategy[], trades: Trade[]): Strategy
     e.totalNotional += safeNumber(s.total_notional_eur);
     e.count += 1;
 
-    for (const legId of s.legs ?? []) {
+    for (const leg of s.legs ?? []) {
+      // legs can be either string IDs or Leg objects
+      const legId = typeof leg === 'string' ? leg : String(leg.id || '');
       const tr = tradeById.get(legId);
       if (tr?.instrument) e.instruments.add(tr.instrument);
     }

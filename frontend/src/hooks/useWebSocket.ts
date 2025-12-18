@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { WebSocketMessage, Trade, Strategy, Alert, Analytics } from '../types/trade';
+import { WebSocketMessage, Trade, Strategy, Alert, Analytics, Leg } from '../types/trade';
 
 // Use environment variable or construct from current host
 const getWsUrl = () => {
@@ -85,15 +85,27 @@ export function useWebSocket() {
   };
 
   const fingerprintStrategy = (s: Strategy): string => {
+    // Include all relevant fields for proper change detection
+    const legsData = s.legs_data ? JSON.stringify(s.legs_data) : '';
     return JSON.stringify([
-      s.strategy_id,
+      s.strategy_id || s.id,
       s.strategy_type,
-      s.underlying_name ?? null,
-      s.total_notional_eur,
-      s.execution_start,
+      s.underlying_name ?? s.underlier ?? null,
+      s.total_notional_eur ?? s.notional ?? null,
+      s.execution_start ?? s.executionDateTime ?? null,
       s.execution_end,
       s.package_transaction_price ?? null,
-      s.legs?.join(',') ?? '',
+      s.legs?.length ?? 0,
+      // New fields from StrategyAPIResponse
+      s.price ?? null,
+      s.iron_price ?? s.ironPrice ?? null,
+      s.product ?? null,
+      s.tenor ?? null,
+      s.instrument ?? null,
+      s.legs_count ?? s.legsCount ?? null,
+      s.platform ?? null,
+      s.d2c ?? null,
+      legsData,
     ]);
   };
 
@@ -212,14 +224,58 @@ export function useWebSocket() {
     return changed;
   };
 
+  // Normalize strategy data from backend to ensure consistent structure
+  const normalizeStrategy = (s: Partial<Strategy>): Strategy => {
+    const id = String(s.strategy_id || s.id || '');
+    const legs = s.legs || [];
+    const legsData = s.legs_data || [];
+    
+    return {
+      id,
+      strategy_id: id,
+      executionDateTime: s.executionDateTime ?? s.execution_date_time,
+      price: s.price,
+      ironPrice: s.ironPrice ?? s.iron_price,
+      product: s.product,
+      underlier: s.underlier ?? s.underlying_name,
+      tenor: s.tenor,
+      instrument: s.instrument,
+      legsCount: s.legsCount ?? s.legs_count ?? (legsData.length || legs.length),
+      notional: s.notional ?? s.total_notional_eur,
+      notionalTruncated: s.notionalTruncated ?? s.notional_truncated,
+      platform: s.platform,
+      d2c: s.d2c,
+      legs: legsData as Leg[],
+      legs_data: legsData as Leg[],
+      // Computed fields for backward compatibility
+      strategy_type: s.strategy_type || s.product || classifyStrategyType(legsData.length || legs.length),
+      underlying_name: s.underlying_name || s.underlier || '',
+      total_notional_eur: s.total_notional_eur ?? s.notional ?? 0,
+      execution_start: s.execution_start ?? s.executionDateTime ?? s.execution_date_time ?? '',
+      execution_end: s.execution_end ?? s.executionDateTime ?? s.execution_date_time ?? '',
+      package_transaction_price: s.package_transaction_price,
+    } as Strategy;
+  };
+
+  // Helper to classify strategy type based on leg count
+  const classifyStrategyType = (legCount: number): string => {
+    if (legCount === 1) return 'Outright';
+    if (legCount === 2) return 'Spread';
+    if (legCount === 3) return 'Butterfly';
+    if (legCount >= 4) return 'Curve';
+    return 'Package';
+  };
+
   const upsertStrategy = (strategy: Strategy): boolean => {
-    const id = strategy.strategy_id;
-    const fp = fingerprintStrategy(strategy);
+    // Normalize the strategy first
+    const normalized = normalizeStrategy(strategy);
+    const id = normalized.strategy_id;
+    const fp = fingerprintStrategy(normalized);
     const prevFp = strategyFpRef.current.get(id);
     const isNew = !strategyCacheRef.current.has(id);
     const hasChanged = isNew || prevFp !== fp;
     if (!hasChanged) return false;
-    strategyCacheRef.current.set(id, strategy);
+    strategyCacheRef.current.set(id, normalized);
     strategyFpRef.current.set(id, fp);
     return true;
   };
@@ -281,8 +337,9 @@ export function useWebSocket() {
           switch (message.type) {
             case 'initial_state':
               {
-                const incomingTrades = (message.data?.trades ?? []) as Trade[];
-                const incomingStrategies = (message.data?.strategies ?? []) as Strategy[];
+                const data = message.data as { trades?: Trade[]; strategies?: Strategy[]; analytics?: Analytics } | null;
+                const incomingTrades = (data?.trades ?? []) as Trade[];
+                const incomingStrategies = (data?.strategies ?? []) as Strategy[];
 
                 // Merge snapshot into cache instead of replacing state:
                 // - keeps old cached trades on reconnect
@@ -293,9 +350,10 @@ export function useWebSocket() {
                 if (tradesChanged) pendingTradesRef.current = true;
                 if (strategiesChanged) pendingStrategiesRef.current = true;
                 if (tradesChanged || strategiesChanged) scheduleFlush();
-              }
-              if (message.data.analytics) {
-                setAnalytics(message.data.analytics);
+                
+                if (data?.analytics) {
+                  setAnalytics(data.analytics);
+                }
               }
               break;
             

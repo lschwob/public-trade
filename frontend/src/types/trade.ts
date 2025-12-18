@@ -5,12 +5,78 @@
  * type safety across the full stack.
  */
 
-/**
- * Trade interface representing an Interest Rate Swap trade.
- * 
- * This interface represents a normalized trade from the internal API with
- * all computed fields like notional in EUR, tenor, and forward detection.
- */
+// ============================================================================
+// Leg model - represents a single leg in a strategy from the API
+// Matches backend LegAPI model
+// ============================================================================
+
+export interface Leg {
+  id?: string | number;
+  upiIsin?: string;
+  upi?: string;
+  rateUnderlier?: string;
+  eventTime?: string;
+  executionTime?: string;
+  effectiveDate?: string;
+  expirationDate?: string;
+  notionalAmountLeg1?: number;
+  notionalAmountLeg2?: number;
+  platformCode?: string;
+  platformName?: string;
+  fixedRateLeg1?: number;
+  fixedRateLeg2?: number;
+  spreadLeg1?: number;
+  spreadLeg2?: number;
+  packageIndicator?: boolean;
+  packageTransactionPrice?: string | number;
+  packageSpread?: number;
+  tenorLeg1?: string;
+  tenorLeg2?: string;
+  // Allow additional fields
+  [key: string]: unknown;
+}
+
+// ============================================================================
+// Strategy model - represents a complete strategy from the API
+// Matches backend StrategyAPIResponse model
+// ============================================================================
+
+export interface Strategy {
+  id: string | number;
+  strategy_id: string; // Alias for id for backward compatibility
+  executionDateTime?: string;
+  execution_date_time?: string; // Backend field name
+  price?: number;
+  ironPrice?: number;
+  iron_price?: number; // Backend field name
+  product?: string;
+  underlier?: string;
+  tenor?: string;
+  instrument?: string;
+  legsCount?: number;
+  legs_count?: number; // Backend field name
+  notional?: number;
+  notionalTruncated?: number;
+  notional_truncated?: number; // Backend field name
+  platform?: string;
+  d2c?: boolean;
+  legs: (Leg | string)[]; // Can be Leg objects or leg IDs for backward compatibility
+  legs_data?: Leg[]; // Full leg data from API
+  
+  // Computed fields from backend Strategy model
+  strategy_type: string; // Same as product or computed
+  underlying_name: string; // Same as underlier
+  total_notional_eur: number; // Same as notional
+  execution_start: string;
+  execution_end: string;
+  package_transaction_price?: string;
+}
+
+// ============================================================================
+// Trade interface - for backward compatibility
+// Represents a single trade/leg converted to Trade format
+// ============================================================================
+
 export interface Trade {
   dissemination_identifier: string;
   original_dissemination_identifier?: string;
@@ -41,25 +107,8 @@ export interface Trade {
   strategy_id?: string;
   notional_eur?: number;
   instrument?: string;
-  package_legs?: Trade[];  // Legs if this is a package trade
-  package_legs_count?: number;  // Total number of legs in package
-}
-
-/**
- * Strategy interface for multi-leg Interest Rate Swap strategies.
- * 
- * Represents a detected multi-leg strategy such as spreads, butterflies,
- * or curve trades with tenor pair information.
- */
-export interface Strategy {
-  strategy_id: string;
-  strategy_type: string;
-  underlying_name: string;
-  legs: string[];
-  total_notional_eur: number;
-  execution_start: string;
-  execution_end: string;
-  package_transaction_price?: string;
+  package_legs?: Trade[];
+  package_legs_count?: number;
 }
 
 export interface Alert {
@@ -141,26 +190,26 @@ export interface Analytics {
 // ============================================================================
 
 export interface InstrumentDetail {
-  instrument: string; // "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y", "5Y10Y", etc.
+  instrument: string;
   high: number | null;
   low: number | null;
   mid: number | null;
   vwap: number | null;
   last: number | null;
-  volume: number; // en EUR
+  volume: number;
   trade_count: number;
-  avg_trade_size: number; // en EUR
-  bid_ask_spread: number | null; // en bps
-  volatility: number | null; // annualisée
-  price_impact: number | null; // bps pour 100M EUR
+  avg_trade_size: number;
+  bid_ask_spread: number | null;
+  volatility: number | null;
+  price_impact: number | null;
 }
 
 export interface SpreadDetail {
-  current: number; // en bps
+  current: number;
   high: number;
   low: number;
   change_bps: number;
-  z_score: number | null; // vs historique
+  z_score: number | null;
 }
 
 export interface SpreadMetrics {
@@ -173,53 +222,53 @@ export interface SpreadMetrics {
 
 export interface ProFlowMetrics {
   net_flow_direction: 'BUY_PRESSURE' | 'SELL_PRESSURE' | 'BALANCED';
-  flow_intensity: number; // 0-100
-  buy_volume_ratio: number; // 0-1
+  flow_intensity: number;
+  buy_volume_ratio: number;
   dominant_instrument: string;
   new_trades_count: number;
-  large_block_count: number; // >500M EUR
+  large_block_count: number;
   flow_by_instrument: Record<string, 'BUY_PRESSURE' | 'SELL_PRESSURE' | 'BALANCED'>;
 }
 
 export interface VolatilityMetrics {
-  realized_volatility: number; // annualisée
-  rate_velocity: Record<string, number>; // bps/min par instrument
+  realized_volatility: number;
+  rate_velocity: Record<string, number>;
   volatility_by_instrument: Record<string, number>;
-  volatility_percentile: number; // vs 30j
+  volatility_percentile: number;
 }
 
 export interface ExecutionMetrics {
-  avg_slippage: number; // bps
-  spread_crossing_rate: number; // %
-  effective_spread: number; // bps
-  vwap_deviation: number; // bps
-  execution_quality_score: number; // 0-100
+  avg_slippage: number;
+  spread_crossing_rate: number;
+  effective_spread: number;
+  vwap_deviation: number;
+  execution_quality_score: number;
 }
 
 export interface PriceImpactMetrics {
-  impact_by_size_bucket: Record<string, number>; // bps par bucket
+  impact_by_size_bucket: Record<string, number>;
   max_impact_trade: {
     trade_id: string;
-    impact: number; // bps
-    size: number; // EUR
+    impact: number;
+    size: number;
   } | null;
-  impact_velocity: number; // minutes pour récupération
+  impact_velocity: number;
 }
 
 export interface ForwardCurveMetrics {
-  forward_rates: Record<string, number>; // taux forward par instrument
-  spot_vs_forward: Record<string, number>; // écart en bps
+  forward_rates: Record<string, number>;
+  spot_vs_forward: Record<string, number>;
   curve_shape: 'NORMAL' | 'INVERTED' | 'FLAT' | 'STEEP';
-  basis_swaps: Record<string, number>; // instrument basis
+  basis_swaps: Record<string, number>;
 }
 
 export interface HistoricalContext {
-  percentile_30d: Record<string, number>; // par instrument/spread
+  percentile_30d: Record<string, number>;
   percentile_90d: Record<string, number>;
   z_score: Record<string, number>;
   avg_30d: Record<string, number>;
   avg_90d: Record<string, number>;
-  deviation_from_avg: Record<string, number>; // bps
+  deviation_from_avg: Record<string, number>;
 }
 
 export interface ProAlert {
@@ -247,13 +296,12 @@ export interface ProTraderMetrics {
 }
 
 export interface ProTraderDelta {
-  // Comparaison entre deux périodes (ex: 10min vs 1h)
   instrument_deltas: Record<string, {
-    mid_change: number; // bps
-    volume_change: number; // %
-    spread_change: number; // bps
+    mid_change: number;
+    volume_change: number;
+    spread_change: number;
   }>;
-  spread_deltas: Record<string, number>; // bps
+  spread_deltas: Record<string, number>;
   flow_delta: {
     direction_change: boolean | string;
     intensity_change: number;
@@ -262,8 +310,104 @@ export interface ProTraderDelta {
 
 export interface WebSocketMessage {
   type: string;
-  data: any;
+  data: unknown;
   timestamp: string;
 }
 
+// ============================================================================
+// Helper functions to convert between formats
+// ============================================================================
 
+/**
+ * Convert a Leg to a Trade format for backward compatibility
+ */
+export function legToTrade(leg: Leg, strategyId: string, executionDateTime?: string, instrument?: string): Trade {
+  const executionTime = leg.executionTime || leg.eventTime || executionDateTime || new Date().toISOString();
+  const notionalLeg1 = leg.notionalAmountLeg1 || 0;
+  const notionalLeg2 = leg.notionalAmountLeg2 || notionalLeg1;
+  
+  // Generate ID from leg data
+  let disseminationId = '';
+  if (leg.id !== undefined && leg.id !== null) {
+    disseminationId = String(leg.id);
+  } else if (leg.upiIsin) {
+    disseminationId = String(leg.upiIsin);
+  } else if (leg.upi) {
+    disseminationId = String(leg.upi);
+  } else {
+    disseminationId = `LEG_${Math.abs(JSON.stringify(leg).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0))}`;
+  }
+  
+  return {
+    dissemination_identifier: disseminationId,
+    action_type: 'NEWT',
+    event_type: 'TRADE',
+    event_timestamp: executionTime,
+    execution_timestamp: executionTime,
+    effective_date: leg.effectiveDate,
+    expiration_date: leg.expirationDate,
+    is_forward: false, // Will be computed
+    notional_amount_leg1: notionalLeg1,
+    notional_amount_leg2: notionalLeg2,
+    notional_currency_leg1: 'EUR',
+    notional_currency_leg2: 'EUR',
+    fixed_rate_leg1: leg.fixedRateLeg1,
+    fixed_rate_leg2: leg.fixedRateLeg2,
+    spread_leg1: leg.spreadLeg1,
+    spread_leg2: leg.spreadLeg2,
+    unique_product_identifier: leg.upi || 'UNKNOWN',
+    unique_product_identifier_underlier_name: leg.rateUnderlier || leg.upi,
+    platform_identifier: leg.platformCode || leg.platformName,
+    package_indicator: leg.packageIndicator || false,
+    package_transaction_price: leg.packageTransactionPrice !== undefined && leg.packageTransactionPrice !== null 
+      ? String(leg.packageTransactionPrice) 
+      : undefined,
+    strategy_id: strategyId,
+    notional_eur: notionalLeg1,
+    instrument: instrument,
+  };
+}
+
+/**
+ * Normalize a Strategy from the API response
+ */
+export function normalizeStrategy(data: Partial<Strategy>): Strategy {
+  const id = String(data.id || data.strategy_id || '');
+  const legs = data.legs || [];
+  
+  return {
+    id,
+    strategy_id: id,
+    executionDateTime: data.executionDateTime,
+    price: data.price,
+    ironPrice: data.ironPrice,
+    product: data.product,
+    underlier: data.underlier,
+    tenor: data.tenor,
+    instrument: data.instrument,
+    legsCount: data.legsCount || legs.length,
+    notional: data.notional,
+    notionalTruncated: data.notionalTruncated,
+    platform: data.platform,
+    d2c: data.d2c,
+    legs,
+    // Computed fields
+    strategy_type: data.strategy_type || data.product || classifyStrategyType(legs.length),
+    underlying_name: data.underlying_name || data.underlier || '',
+    total_notional_eur: data.total_notional_eur || data.notional || 0,
+    execution_start: data.execution_start || data.executionDateTime || '',
+    execution_end: data.execution_end || data.executionDateTime || '',
+    package_transaction_price: data.package_transaction_price,
+  };
+}
+
+/**
+ * Classify strategy type based on leg count
+ */
+function classifyStrategyType(legCount: number): string {
+  if (legCount === 1) return 'Outright';
+  if (legCount === 2) return 'Spread';
+  if (legCount === 3) return 'Butterfly';
+  if (legCount >= 4) return 'Curve';
+  return 'Package';
+}
