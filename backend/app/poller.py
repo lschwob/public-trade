@@ -417,15 +417,35 @@ def convert_strategy_api_response(response_data: StrategyAPIResponse) -> Tuple[L
                         package_transaction_price = str(price_val)
                         break
             
+            # Convert legs to dict for storage (full leg data)
+            legs_data = [leg.dict() for leg in response_data.legs]
+            
+            # Get platform from first leg or from strategy
+            platform = response_data.legs[0].platformCode or response_data.legs[0].platformName if response_data.legs else None
+            
             strategy = Strategy(
                 strategy_id=response_data.id,
                 strategy_type=strategy_type,
                 underlying_name=underlying_name,
                 legs=[t.dissemination_identifier for t in leg_trades],
+                legs_data=legs_data,  # Full leg data from API
                 total_notional_eur=total_notional,
                 execution_start=execution_start,
                 execution_end=execution_end,
-                package_transaction_price=package_transaction_price
+                package_transaction_price=package_transaction_price,
+                # Additional fields from StrategyAPIResponse
+                execution_date_time=execution_datetime,
+                price=response_data.price,
+                iron_price=response_data.ironPrice,
+                product=response_data.product,
+                underlier=response_data.underlier,
+                tenor=response_data.tenor,
+                instrument=response_data.instrument,
+                legs_count=response_data.legsCount or len(leg_trades),
+                notional=response_data.notional,
+                notional_truncated=response_data.notionalTruncated,
+                platform=platform,
+                d2c=response_data.d2c
             )
         
     except Exception as e:

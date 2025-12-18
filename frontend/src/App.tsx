@@ -39,7 +39,11 @@ function App() {
 
     const fs = strategies.filter(s => {
       if (eurUnderlyingRegex.test(s.underlying_name ?? '')) return true;
-      return (s.legs ?? []).some(id => tradeIdSet.has(id));
+      return (s.legs ?? []).some(leg => {
+        // legs can be either string IDs or Leg objects
+        const legId = typeof leg === 'string' ? leg : String(leg.id || '');
+        return tradeIdSet.has(legId);
+      });
     });
 
     const strategyIdSet = new Set(fs.map(s => s.strategy_id));

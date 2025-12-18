@@ -1,40 +1,43 @@
 /**
  * StrategyRow component for rendering a strategy row with expandable legs.
  * 
- * This component displays a strategy as a single row that can be expanded
- * to show all the legs (trades) that make up the strategy.
+ * This component displays a strategy as a single row with all strategy data
+ * (product, tenor, instrument, execTime, price, ironPrice, platform, d2c, etc.)
+ * that can be expanded to show all the legs with their full data.
  */
 
 import { memo } from 'react';
-import { Trade, Strategy } from '../types/trade';
+import { Strategy, Leg } from '../types/trade';
 import { ColumnConfig } from './Blotter';
-import TradeRow from './TradeRow';
-import { extractUnderlierTenor, getTenorFromTrade } from '../utils/underlierTenor';
 
 /**
  * Props for the StrategyRow component.
  */
 interface StrategyRowProps {
   strategy: Strategy;
-  trades: Trade[];
   highlighted: boolean;
   isExpanded: boolean;
   onToggleExpand: () => void;
   visibleColumns: ColumnConfig[];
-  strategies?: Strategy[];
 }
 
 function StrategyRowComponent({
   strategy,
-  trades,
   highlighted,
   isExpanded,
   onToggleExpand,
-  visibleColumns,
-  strategies = []
+  visibleColumns
 }: StrategyRowProps) {
-  const formatTime = (timestamp: string) => {
+  // Get legs data - use legs_data if available, otherwise try legs
+  const legsData: Leg[] = (strategy.legs_data || strategy.legs || []).filter(
+    (leg): leg is Leg => typeof leg === 'object' && leg !== null
+  );
+  const legsCount = strategy.legs_count || strategy.legsCount || legsData.length;
+
+  const formatTime = (timestamp?: string) => {
+    if (!timestamp) return '-';
     const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return '-';
     return date.toLocaleTimeString('en-US', { 
       hour12: false,
       hour: '2-digit',
@@ -43,42 +46,45 @@ function StrategyRowComponent({
     });
   };
 
-  const formatEur = (eur?: number) => {
-    if (!eur) return '-';
-    if (eur >= 1_000_000_000) {
-      return `${(eur / 1_000_000_000).toFixed(2)}B`;
-    } else if (eur >= 1_000_000) {
-      return `${(eur / 1_000_000).toFixed(2)}M`;
+  const formatNotional = (notional?: number) => {
+    if (notional === undefined || notional === null) return '-';
+    if (notional >= 1_000_000_000) {
+      return `${(notional / 1_000_000_000).toFixed(2)}B`;
+    } else if (notional >= 1_000_000) {
+      return `${(notional / 1_000_000).toFixed(2)}M`;
+    } else if (notional >= 1_000) {
+      return `${(notional / 1_000).toFixed(1)}K`;
     } else {
-      return `${eur.toLocaleString()}`;
+      return `${notional.toLocaleString()}`;
     }
   };
 
-  const formatStrategyLabel = (strategy: Strategy): string => {
-    // Return strategy type directly from API (already formatted)
-    return strategy.strategy_type;
+  const formatPrice = (price?: number) => {
+    if (price === undefined || price === null) return '-';
+    // If price is > 1, it's likely already a percentage
+    const displayPrice = Math.abs(price) > 1 ? price : price * 100;
+    return `${displayPrice.toFixed(4)}%`;
   };
 
-  const getStrategyColor = (label: string) => {
-    if (label.startsWith('Spread')) return 'bg-blue-100 text-blue-800';
-    if (label.startsWith('Butterfly')) return 'bg-purple-100 text-purple-800';
-    if (label.startsWith('Curve')) return 'bg-green-100 text-green-800';
+  const getProductColor = (product?: string) => {
+    const p = (product || '').toLowerCase();
+    if (p === 'outright' || p.includes('outright')) return 'bg-gray-100 text-gray-700';
+    if (p.includes('spread')) return 'bg-blue-100 text-blue-800';
+    if (p.includes('butterfly')) return 'bg-purple-100 text-purple-800';
+    if (p.includes('curve')) return 'bg-green-100 text-green-800';
     return 'bg-yellow-100 text-yellow-800';
   };
-
-  const strategyLabel = formatStrategyLabel(strategy);
-  const firstTrade = trades[0];
 
   const renderCell = (columnId: string) => {
     switch (columnId) {
       case 'time':
         return (
           <div className="text-gray-700 font-mono text-sm font-semibold">
-            {formatTime(firstTrade.execution_timestamp)}
+            {formatTime(strategy.executionDateTime || strategy.execution_date_time || strategy.execution_start)}
           </div>
         );
       
-      case 'action':
+      case 'product':
         return (
           <div className="flex items-center gap-1">
             <button
@@ -89,93 +95,81 @@ function StrategyRowComponent({
               className={`px-2 py-1 rounded text-xs font-semibold transition-colors ${
                 isExpanded 
                   ? 'bg-purple-600 text-white hover:bg-purple-700' 
-                  : 'bg-purple-100 text-purple-800 hover:bg-purple-200'
+                  : getProductColor(strategy.product || strategy.strategy_type)
               }`}
-              title={isExpanded ? 'Collapse strategy' : `Expand ${trades.length} legs`}
+              title={isExpanded ? 'Collapse legs' : `Expand ${legsCount} legs`}
             >
-              {isExpanded ? '▼' : '▶'} {trades.length}
+              {isExpanded ? '▼' : '▶'} {strategy.product || strategy.strategy_type || 'Package'}
             </button>
           </div>
         );
       
       case 'underlying':
         return (
-          <div className="text-gray-900 font-semibold truncate" title={strategy.underlying_name || ''}>
-            {strategy.underlying_name || '-'}
-          </div>
-        );
-      
-      case 'notional':
-        return (
-          <div className="text-gray-900 font-medium text-xs">
-            {formatEur(strategy.total_notional_eur)}
+          <div className="text-gray-900 font-semibold truncate" title={strategy.underlier || strategy.underlying_name || ''}>
+            {strategy.underlier || strategy.underlying_name || '-'}
           </div>
         );
       
       case 'tenor':
         return (
           <div className="text-gray-600 text-xs">
-            {extractUnderlierTenor(strategy.underlying_name) ?? getTenorFromTrade(firstTrade)}
+            {strategy.tenor || '-'}
           </div>
         );
 
       case 'instrument':
         return (
-          <div className="text-gray-600 text-xs">
-            {firstTrade.instrument || '-'}
+          <div className="text-gray-600 text-xs font-medium">
+            {strategy.instrument || '-'}
           </div>
         );
       
-      case 'rate':
-        // Show average rate or first trade rate
-        const avgRate = trades
-          .map(t => t.fixed_rate_leg1)
-          .filter((r): r is number => r !== undefined && r !== null)
-          .reduce((sum, r, _, arr) => sum + r / arr.length, 0);
-        
-        // Check if rate is already in percentage or in decimal
-        const displayRate = Math.abs(avgRate) > 1 ? avgRate : avgRate * 100;
-        
+      case 'notional':
+        return (
+          <div className="text-gray-900 font-medium text-xs">
+            {formatNotional(strategy.notional || strategy.total_notional_eur)}
+          </div>
+        );
+      
+      case 'legs':
+        return (
+          <div className="text-gray-700 font-semibold text-xs text-center">
+            {legsCount}
+          </div>
+        );
+      
+      case 'price':
         return (
           <div className="text-gray-700 font-mono text-xs">
-            {avgRate !== 0 ? `${displayRate.toFixed(4)}%` : '-'}
+            {formatPrice(strategy.price)}
           </div>
         );
       
-      case 'package':
+      case 'ironPrice':
         return (
-          <div className="flex items-center gap-2">
-            {strategy.package_transaction_price && (
-              <span className="text-blue-600" title="Package strategy">📦</span>
-            )}
-            <span className="text-xs text-gray-500">
-              {trades.length} leg{trades.length > 1 ? 's' : ''}
-            </span>
-          </div>
-        );
-      
-      case 'strategy':
-        return (
-          <div className="flex items-center gap-1 flex-wrap">
-            <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${getStrategyColor(strategyLabel)}`}>
-              {strategyLabel}
-            </span>
+          <div className="text-gray-700 font-mono text-xs">
+            {formatPrice(strategy.iron_price || strategy.ironPrice)}
           </div>
         );
       
       case 'platform':
-        // Show unique platforms
-        const platforms = Array.from(new Set(trades.map(t => t.platform_identifier).filter(Boolean)));
         return (
           <div className="text-gray-600 text-xs">
-            {platforms.length > 0 ? platforms.join(', ') : '-'}
+            {strategy.platform || '-'}
           </div>
         );
       
-      case 'eur':
+      case 'd2c':
         return (
-          <div className="text-gray-700 font-semibold text-xs">
-            {formatEur(strategy.total_notional_eur)}
+          <div className="text-center">
+            {strategy.d2c !== undefined && strategy.d2c !== null ? (
+              <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                strategy.d2c ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+              }`}>
+                {strategy.d2c ? 'Yes' : 'No'}
+              </span>
+            ) : '-'}
           </div>
         );
       
@@ -183,35 +177,6 @@ function StrategyRowComponent({
         return (
           <div className="text-gray-500 font-mono text-xs truncate" title={strategy.strategy_id}>
             {strategy.strategy_id}
-          </div>
-        );
-      
-      case 'currency':
-        // Show currencies from trades
-        const currencies = Array.from(new Set([
-          ...trades.map(t => t.notional_currency_leg1),
-          ...trades.map(t => t.notional_currency_leg2)
-        ].filter(Boolean)));
-        return (
-          <div className="text-gray-600 text-xs">
-            {currencies.length > 0 ? currencies.join(' / ') : '-'}
-          </div>
-        );
-      
-      case 'maturity':
-        // Show range of maturities
-        const maturities = trades
-          .map(t => t.expiration_date)
-          .filter((d): d is string => Boolean(d))
-          .sort();
-        return (
-          <div className="text-gray-600 text-xs">
-            {maturities.length > 0 
-              ? maturities.length === 1 
-                ? maturities[0] 
-                : `${maturities[0]} - ${maturities[maturities.length - 1]}`
-              : '-'
-            }
           </div>
         );
       
@@ -223,9 +188,10 @@ function StrategyRowComponent({
   return (
     <>
       <tr
-        className={`border-b border-gray-100 hover:bg-gray-50/70 transition-colors ${
-          highlighted ? 'bg-blue-50 ring-2 ring-blue-200' : 'bg-purple-50/60'
+        className={`border-b border-gray-100 hover:bg-gray-50/70 transition-colors cursor-pointer ${
+          highlighted ? 'bg-blue-50 ring-2 ring-blue-200' : 'bg-white'
         }`}
+        onClick={onToggleExpand}
       >
         {visibleColumns.map(col => (
           <td
@@ -241,31 +207,114 @@ function StrategyRowComponent({
       </tr>
       
       {/* Expanded Strategy Legs */}
-      {isExpanded && trades.length > 0 && (
+      {isExpanded && legsData.length > 0 && (
         <tr>
           <td colSpan={visibleColumns.length} className="p-0 border-b border-gray-200">
             <div className="bg-purple-50 border-l-4 border-purple-400">
               <div className="px-4 py-2 bg-purple-100 border-b border-purple-200">
                 <div className="text-sm font-semibold text-purple-900">
-                  Strategy: {strategyLabel} ({trades.length} leg{trades.length > 1 ? 's' : ''})
-                  {strategy.package_transaction_price && ` - Package: ${strategy.package_transaction_price}`}
+                  {strategy.product || strategy.strategy_type}: {legsCount} leg{legsCount > 1 ? 's' : ''}
+                  {strategy.package_transaction_price && ` - Package Price: ${strategy.package_transaction_price}`}
                 </div>
-                <div className="text-xs text-purple-700 mt-1">
-                  Total Notional: {formatEur(strategy.total_notional_eur)} | 
-                  Execution: {formatTime(strategy.execution_start)} - {formatTime(strategy.execution_end)}
+                <div className="text-xs text-purple-700 mt-1 flex flex-wrap gap-4">
+                  <span>Total Notional: {formatNotional(strategy.notional || strategy.total_notional_eur)}</span>
+                  {strategy.price !== undefined && strategy.price !== null && (
+                    <span>Price: {formatPrice(strategy.price)}</span>
+                  )}
+                  {(strategy.iron_price || strategy.ironPrice) !== undefined && (
+                    <span>Iron Price: {formatPrice(strategy.iron_price || strategy.ironPrice)}</span>
+                  )}
+                  {strategy.platform && <span>Platform: {strategy.platform}</span>}
+                  {strategy.d2c !== undefined && <span>D2C: {strategy.d2c ? 'Yes' : 'No'}</span>}
                 </div>
               </div>
-              <div className="divide-y divide-purple-200">
-                {trades.map((trade, index) => (
-                  <TradeRow
-                    key={trade.dissemination_identifier || index}
-                    trade={trade}
-                    highlighted={false}
-                    isLeg={true}
-                    visibleColumns={visibleColumns}
-                    strategies={strategies}
-                  />
-                ))}
+              
+              {/* Legs Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-purple-100/50">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold text-purple-900">Leg #</th>
+                      <th className="px-3 py-2 text-left font-semibold text-purple-900">ID</th>
+                      <th className="px-3 py-2 text-left font-semibold text-purple-900">Underlier</th>
+                      <th className="px-3 py-2 text-left font-semibold text-purple-900">Exec Time</th>
+                      <th className="px-3 py-2 text-left font-semibold text-purple-900">Effective</th>
+                      <th className="px-3 py-2 text-left font-semibold text-purple-900">Expiration</th>
+                      <th className="px-3 py-2 text-left font-semibold text-purple-900">Tenor L1</th>
+                      <th className="px-3 py-2 text-left font-semibold text-purple-900">Tenor L2</th>
+                      <th className="px-3 py-2 text-right font-semibold text-purple-900">Notional L1</th>
+                      <th className="px-3 py-2 text-right font-semibold text-purple-900">Notional L2</th>
+                      <th className="px-3 py-2 text-right font-semibold text-purple-900">Rate L1</th>
+                      <th className="px-3 py-2 text-right font-semibold text-purple-900">Rate L2</th>
+                      <th className="px-3 py-2 text-right font-semibold text-purple-900">Spread L1</th>
+                      <th className="px-3 py-2 text-right font-semibold text-purple-900">Spread L2</th>
+                      <th className="px-3 py-2 text-left font-semibold text-purple-900">Platform</th>
+                      <th className="px-3 py-2 text-center font-semibold text-purple-900">Package</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-purple-200">
+                    {legsData.map((leg, index) => (
+                      <tr key={String(leg.id || index)} className="hover:bg-purple-50/50">
+                        <td className="px-3 py-2 text-gray-600 font-semibold">{index + 1}</td>
+                        <td className="px-3 py-2 text-gray-700 font-mono truncate max-w-[150px]" title={String(leg.id || leg.upiIsin || leg.upi || '')}>
+                          {String(leg.id || leg.upiIsin || leg.upi || '-')}
+                        </td>
+                        <td className="px-3 py-2 text-gray-900 font-medium truncate max-w-[150px]" title={leg.rateUnderlier || leg.upi || ''}>
+                          {leg.rateUnderlier || leg.upi || '-'}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 font-mono">
+                          {formatTime(leg.executionTime || leg.eventTime)}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">
+                          {leg.effectiveDate || '-'}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">
+                          {leg.expirationDate || '-'}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {leg.tenorLeg1 || '-'}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {leg.tenorLeg2 || '-'}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-900 font-medium">
+                          {formatNotional(leg.notionalAmountLeg1)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700">
+                          {formatNotional(leg.notionalAmountLeg2)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700 font-mono">
+                          {leg.fixedRateLeg1 !== undefined && leg.fixedRateLeg1 !== null 
+                            ? `${(Math.abs(leg.fixedRateLeg1) > 1 ? leg.fixedRateLeg1 : leg.fixedRateLeg1 * 100).toFixed(4)}%` 
+                            : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700 font-mono">
+                          {leg.fixedRateLeg2 !== undefined && leg.fixedRateLeg2 !== null 
+                            ? `${(Math.abs(leg.fixedRateLeg2) > 1 ? leg.fixedRateLeg2 : leg.fixedRateLeg2 * 100).toFixed(4)}%` 
+                            : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700">
+                          {leg.spreadLeg1 !== undefined && leg.spreadLeg1 !== null 
+                            ? `${leg.spreadLeg1.toFixed(2)}` 
+                            : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700">
+                          {leg.spreadLeg2 !== undefined && leg.spreadLeg2 !== null 
+                            ? `${leg.spreadLeg2.toFixed(2)}` 
+                            : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">
+                          {leg.platformCode || leg.platformName || '-'}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          {leg.packageIndicator ? (
+                            <span className="text-blue-600" title="Part of package">📦</span>
+                          ) : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </td>
@@ -276,7 +325,6 @@ function StrategyRowComponent({
 }
 
 // Memoize StrategyRow to prevent unnecessary re-renders
-// Only re-render if strategy data, highlighted status, or expansion state changes
 export default memo(StrategyRowComponent, (prevProps, nextProps) => {
   return (
     prevProps.strategy.strategy_id === nextProps.strategy.strategy_id &&
@@ -284,9 +332,8 @@ export default memo(StrategyRowComponent, (prevProps, nextProps) => {
     prevProps.isExpanded === nextProps.isExpanded &&
     prevProps.visibleColumns.length === nextProps.visibleColumns.length &&
     // Check if the strategy data has actually changed
-    prevProps.strategy.total_notional_eur === nextProps.strategy.total_notional_eur &&
-    prevProps.trades.length === nextProps.trades.length &&
-    // Compare first trade's timestamp to detect if trades changed
-    prevProps.trades[0]?.execution_timestamp === nextProps.trades[0]?.execution_timestamp
+    prevProps.strategy.notional === nextProps.strategy.notional &&
+    prevProps.strategy.price === nextProps.strategy.price &&
+    (prevProps.strategy.legs_data?.length || 0) === (nextProps.strategy.legs_data?.length || 0)
   );
 });

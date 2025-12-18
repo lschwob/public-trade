@@ -314,19 +314,49 @@ class Strategy(BaseModel):
         strategy_type: Type of strategy (e.g., "Spread", "Butterfly", "Curve")
         underlying_name: Name of the underlying (e.g., "USD-LIBOR-BBA")
         legs: List of trade dissemination_identifiers that make up this strategy
+        legs_data: Full leg data from API (LegAPI objects)
         total_notional_eur: Sum of all leg notionals in EUR
         execution_start: Timestamp of the first leg execution
         execution_end: Timestamp of the last leg execution
         package_transaction_price: Package price if applicable
+        
+        # Additional fields from StrategyAPIResponse
+        execution_date_time: Execution datetime string
+        price: Strategy price
+        iron_price: Iron price
+        product: Product type (e.g., "Spread", "Butterfly")
+        underlier: Underlier name
+        tenor: Tenor string
+        instrument: Instrument (maturity)
+        legs_count: Number of legs
+        notional: Total notional
+        notional_truncated: Truncated notional
+        platform: Trading platform
+        d2c: Dealer-to-customer flag
     """
     strategy_id: str
     strategy_type: str  # Spread, Butterfly, Curve
     underlying_name: str
     legs: List[str]  # List of dissemination_identifiers
+    legs_data: List[Dict[str, Any]] = []  # Full leg data from API
     total_notional_eur: float
     execution_start: datetime
     execution_end: datetime
     package_transaction_price: Optional[str] = None
+    
+    # Additional fields from StrategyAPIResponse
+    execution_date_time: Optional[str] = None
+    price: Optional[float] = None
+    iron_price: Optional[float] = None
+    product: Optional[str] = None
+    underlier: Optional[str] = None
+    tenor: Optional[str] = None
+    instrument: Optional[str] = None
+    legs_count: Optional[int] = None
+    notional: Optional[float] = None
+    notional_truncated: Optional[float] = None
+    platform: Optional[str] = None
+    d2c: Optional[bool] = None
 
 
 class Alert(BaseModel):
